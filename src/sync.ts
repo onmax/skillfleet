@@ -14,8 +14,9 @@ import { agentTargets, formerTargets } from "./agents.ts";
 import { UserError } from "./errors.ts";
 import { checkForks, unresolvedFiles } from "./edits.ts";
 import { exec, stopAll } from "./exec.ts";
+import { syncEntries } from "./entrysync.ts";
 import { adoptFileCopyEdits, itemId, itemName, itemPath, linkFiles, parseItemId } from "./files.ts";
-import { FILE_KINDS } from "./kinds.ts";
+import { ITEM_KINDS } from "./kinds.ts";
 import {
   changedFiles,
   dict,
@@ -57,6 +58,7 @@ import { nameKey } from "./names.ts";
 import { paths, tildify } from "./paths.ts";
 import { LOCK_MAX_AGE_MS, LockHeldError, lockText, readLock, takeLock } from "./lock.ts";
 import type { HookRun, Report } from "./report.ts";
+import { CLAUDE_PLUGIN_NAME } from "./hookdefs.ts";
 import { failedResult, type SourceResult, sourceFiles, syncSource } from "./sources.ts";
 import { loadState, sourceState, type State, StateFile } from "./state.ts";
 import { scheduleDrift } from "./timer.ts";
@@ -583,6 +585,13 @@ export async function sync(options: SyncOptions = {}): Promise<Report> {
     const shadowed: Report["shadowed"] = [];
     for (const result of results) {
       for (const skill of result.skills) {
+        // ~/.claude/skills/fleetrc is the plugin that carries Claude Code's hooks (entrysync.ts).
+        if (nameKey(skill.name) === nameKey(CLAUDE_PLUGIN_NAME)) {
+          warnings.push(
+            `${result.id}: the skill ${skill.name} is not linked: fleetrc keeps that name for the plugin that carries Claude Code's hooks`,
+          );
+          continue;
+        }
         const winner = byKey.get(nameKey(skill.name));
         if (winner) {
           if (winner.source !== result.id)
@@ -661,6 +670,13 @@ export async function sync(options: SyncOptions = {}): Promise<Report> {
       state,
       { copy: options.copy, dryRun, keep: keepFiles },
     );
+    doing = "merging MCP servers and hooks into agent configs";
+    const entries = syncEntries(
+      results,
+      targets.flatMap((target) => target.agents),
+      state,
+      { dryRun, keep: keepFiles },
+    );
     const linkedItem = (source: string, item: string) =>
       fileLinks.links.some((link) => link.source === source && link.item === item);
 
@@ -729,9 +745,21 @@ export async function sync(options: SyncOptions = {}): Promise<Report> {
         adopted: fileLinks.adopted,
         foreign: fileLinks.foreign,
       },
+      entries: {
+        total: entries.total,
+        added: entries.added,
+        updated: entries.updated,
+        removed: entries.removed,
+        adopted: entries.adopted,
+        held: entries.held,
+        foreign: entries.foreign,
+        review: entries.review,
+        skipped: entries.skipped,
+      },
       shadowed: [
         ...shadowed.filter((entry) => !forked.has(nameKey(entry.skill))),
         ...fileLinks.shadowed,
+        ...entries.shadowed,
       ],
       renamed: [...winners.keys()].flatMap((name) => {
         const from = renamedFrom(state, winners, name);
@@ -757,6 +785,7 @@ export async function sync(options: SyncOptions = {}): Promise<Report> {
         ...loaded.warnings,
         ...results.flatMap((result) => result.warnings),
         ...fileLinks.warnings,
+        ...entries.warnings,
         ...(await unmatchedHooks(loaded, results)),
       ],
       errors: [
@@ -764,6 +793,7 @@ export async function sync(options: SyncOptions = {}): Promise<Report> {
         ...results.flatMap((result) => (result.error ? [`${result.id}: ${result.error}`] : [])),
         ...targetReports.flatMap((target) => target.errors),
         ...fileLinks.errors,
+        ...entries.errors,
       ],
     };
     if (options.only) carryOver(report, options.only);
@@ -912,7 +942,7 @@ function retireStore(id: string, state: State, backupRoot: string, why: string):
       backup: join(backupRoot, id),
       name: (n: string) => n,
     },
-    ...FILE_KINDS.map((kind) => ({
+    ...ITEM_KINDS.map((kind) => ({
       dir: join(store, kind),
       records: sourceState?.files?.[kind]?.items ?? {},
       backup: join(backupRoot, id, kind),
