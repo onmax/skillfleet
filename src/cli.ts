@@ -576,7 +576,20 @@ async function timer(action: string | undefined) {
 
 function lastRun(): Report | undefined {
   const raw = readJsonOrNothing(paths.lastRun());
-  return isRecord(raw) && raw.version === 1 ? (raw as unknown as Report) : undefined;
+  if (!isRecord(raw) || raw.version !== 1) return undefined;
+  const report = raw as unknown as Report;
+  return {
+    ...report,
+    files: report.files ?? {
+      total: 0,
+      links: [],
+      added: [],
+      updated: [],
+      removed: [],
+      adopted: [],
+      foreign: [],
+    },
+  };
 }
 
 /** The installed timer's schedule, when the manifest now names another; see `scheduleDrift`. */
@@ -605,6 +618,7 @@ async function status() {
       manifest: config?.manifest,
       lastRun: report,
       lastChange: state.lastChange,
+      files: Object.keys(state.links ?? {}).length,
       forks: state.forks ?? {},
       staleSessions: stale,
       trigger: {
@@ -652,8 +666,10 @@ async function status() {
 function list() {
   const listed = skillList();
   if (json) emit(listed);
-  else
+  else {
     for (const skill of listed.skills) say(`${skill.name}  ${skill.source}  ${tildify(skill.dir)}`);
+    for (const file of listed.files) say(`${file.item}  ${file.source}  ${tildify(file.path)}`);
+  }
   return 0;
 }
 
@@ -670,16 +686,22 @@ async function agents() {
   }
   const width = Math.max(...rows.map((row) => row.id.length));
   say(
-    ...rows.map((row) =>
-      [
-        row.id.padEnd(width),
-        row.detected ? "installed" : "         ",
-        row.linkedInto
-          ? `linked into ${tildify(row.linkedInto)}`
-          : row.dir
-            ? tildify(row.dir)
-            : "(no global skills folder)",
-      ].join("  "),
+    ...rows.map(
+      (row) =>
+        [
+          row.id.padEnd(width),
+          row.detected ? "installed" : "         ",
+          row.linkedInto
+            ? `linked into ${tildify(row.linkedInto)}`
+            : row.dir
+              ? tildify(row.dir)
+              : "(no global skills folder)",
+        ].join("  ") +
+        (row.kinds && Object.keys(row.kinds).length > 0
+          ? `\n${" ".repeat(width + 2)}${Object.entries(row.kinds)
+              .map(([kind, path]) => `${kind} ${tildify(path)}`)
+              .join(", ")}`
+          : ""),
     ),
   );
   return 0;

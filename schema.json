@@ -179,6 +179,61 @@
           "enum": ["auto", "review"],
           "default": "auto",
           "description": "review: fetch and show a diff, apply only on `fleetrc update <source>`."
+        },
+        "instructions": {
+          "description": "The user-level instruction file, linked as each agent's own (CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md). Its glob must match one file.",
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "Glob of files inside the source; it goes to every agent with an instruction file."
+            },
+            {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {
+                "enum": ["claude-code", "codex", "grok", "gemini-cli", "opencode", "github-copilot"]
+              },
+              "additionalProperties": { "type": "string", "minLength": 1 },
+              "description": "A glob of files inside the source for each agent id. Each agent gets its own files: nothing is translated."
+            }
+          ]
+        },
+        "subagents": {
+          "description": "Subagent files, linked into each agent's subagents folder (~/.claude/agents for Claude Code), keeping their folders below the glob's base.",
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "Glob of files inside the source; it goes to Claude Code only, since agents read other formats."
+            },
+            {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {
+                "enum": ["claude-code", "codex", "grok", "gemini-cli", "opencode"]
+              },
+              "additionalProperties": { "type": "string", "minLength": 1 },
+              "description": "A glob of files inside the source for each agent id. Each agent gets its own files: nothing is translated."
+            }
+          ]
+        },
+        "commands": {
+          "description": "Command files, linked into each agent's commands folder (~/.claude/commands for Claude Code), keeping their folders below the glob's base.",
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "Glob of files inside the source; it goes to Claude Code only, since agents read other formats."
+            },
+            {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": { "enum": ["claude-code", "gemini-cli", "opencode"] },
+              "additionalProperties": { "type": "string", "minLength": 1 },
+              "description": "A glob of files inside the source for each agent id. Each agent gets its own files: nothing is translated."
+            }
+          ]
         }
       }
     },
@@ -195,6 +250,9 @@
             "include": { "$ref": "#/$defs/common/properties/include" },
             "exclude": { "$ref": "#/$defs/common/properties/exclude" },
             "update": { "$ref": "#/$defs/common/properties/update" },
+            "instructions": { "$ref": "#/$defs/common/properties/instructions" },
+            "subagents": { "$ref": "#/$defs/common/properties/subagents" },
+            "commands": { "$ref": "#/$defs/common/properties/commands" },
             "git": {
               "type": "string",
               "minLength": 1,
@@ -239,6 +297,9 @@
             "include": { "$ref": "#/$defs/common/properties/include" },
             "exclude": { "$ref": "#/$defs/common/properties/exclude" },
             "update": { "$ref": "#/$defs/common/properties/update" },
+            "instructions": { "$ref": "#/$defs/common/properties/instructions" },
+            "subagents": { "$ref": "#/$defs/common/properties/subagents" },
+            "commands": { "$ref": "#/$defs/common/properties/commands" },
             "npm": { "type": "string", "minLength": 1 },
             "registry": { "type": "string", "format": "uri" }
           }
@@ -253,6 +314,9 @@
             "include": { "$ref": "#/$defs/common/properties/include" },
             "exclude": { "$ref": "#/$defs/common/properties/exclude" },
             "update": { "$ref": "#/$defs/common/properties/update" },
+            "instructions": { "$ref": "#/$defs/common/properties/instructions" },
+            "subagents": { "$ref": "#/$defs/common/properties/subagents" },
+            "commands": { "$ref": "#/$defs/common/properties/commands" },
             "local": { "type": "string", "minLength": 1 },
             "adopt": { "type": "boolean" }
           }

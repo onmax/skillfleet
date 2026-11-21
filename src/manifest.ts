@@ -33,6 +33,7 @@ import { expandPath, paths, tildify } from "./paths.ts";
 import { tailscaleManifest } from "./tailscale.ts";
 import { cronProblem, timeZoneProblem } from "./timer.ts";
 import { LEGACY_MANIFEST_DIR, legacyWarning } from "./legacy.ts";
+import { agentsWith, defaultAgents, FILE_KINDS, type FileKind } from "./kinds.ts";
 
 export type UpdateMode = "auto" | "review";
 
@@ -44,10 +45,14 @@ interface SourceCommon {
   skills?: string;
   include?: string[];
   exclude?: string[];
+  /** Files of each kind the source gives agents: a glob inside the source for each agent id. */
+  files?: FileSpecs;
   update: UpdateMode;
   /** The manifest that declared the source. */
   origin: string;
 }
+
+export type FileSpecs = Partial<Record<FileKind, Record<string, string>>>;
 
 /** A git repository you work in: updated with fetch + fast-forward, linked in place. */
 export interface CloneSource extends SourceCommon {
@@ -155,6 +160,7 @@ const SOURCE_KEYS = new Set([
   "update",
   "adopt",
   "followLinks",
+  ...FILE_KINDS,
 ]);
 const ROOT_KEYS = new Set([
   "$schema",
@@ -207,6 +213,43 @@ function skillsGlob(file: string, at: string, value: unknown): string | undefine
   return glob;
 }
 
+/**
+ * A source's `instructions`, `subagents` and `commands`: a glob for the agents a string goes to
+ * (`defaultAgents`), or an object of globs by agent id. Nothing is translated, so each agent named
+ * must read that kind.
+ */
+function fileSpecs(file: string, at: string, raw: Record<string, unknown>): FileSpecs | undefined {
+  const out: FileSpecs = {};
+  for (const kind of FILE_KINDS) {
+    const value = raw[kind];
+    if (value === undefined) continue;
+    if (typeof value === "string") {
+      const glob = skillsGlob(file, `${at}.${kind}`, value)!;
+      out[kind] = dict(defaultAgents(kind).map((agent) => [agent, glob]));
+      continue;
+    }
+    if (!isRecord(value) || Object.keys(value).length === 0)
+      fail(file, `${at}.${kind}`, "must be a glob or an object of globs by agent id");
+    const readers = agentsWith(kind);
+    const specs = dict<string>();
+    for (const [agent, glob] of Object.entries(value)) {
+      if (!readers.includes(agent)) {
+        const known = agentIds().includes(agent);
+        fail(
+          file,
+          `${at}.${kind}.${agent}`,
+          known
+            ? `names an agent fleetrc links no ${kind} into; ${kind} go to ${readers.join(", ")}`
+            : `is not an agent id${closest(agent, readers) ? ` (did you mean "${closest(agent, readers)}"?)` : ""}; ${kind} go to ${readers.join(", ")}`,
+        );
+      }
+      specs[agent] = skillsGlob(file, `${at}.${kind}.${agent}`, glob)!;
+    }
+    out[kind] = specs;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** git reads a URL, path or ref that starts with `-` as an option. */
 function notOption(file: string, at: string, value: string | undefined): string | undefined {
   if (value?.startsWith("-")) fail(file, at, `"${value}" must not start with "-"`);
@@ -253,6 +296,8 @@ function parseSource(file: string, at: string, raw: unknown, base: string): Sour
     include: stringList(file, `${at}.include`, raw.include),
     exclude: stringList(file, `${at}.exclude`, raw.exclude),
   };
+  const files = fileSpecs(file, at, raw);
+  if (files) common.files = files;
   const ref = notOption(file, `${at}.ref`, optionalString(file, `${at}.ref`, raw.ref));
   const kind = kinds[0]!;
   const spec = optionalString(file, `${at}.${kind}`, raw[kind])!;
@@ -282,7 +327,7 @@ function parseSource(file: string, at: string, raw: unknown, base: string): Sour
       for (const key of ["ref", "path", "registry", "adopt", "followLinks"])
         onlyFor(key, key === "registry" ? "npm" : "git");
       // An index lists skills by name; there are no folders to glob.
-      onlyFor("skills", "git, npm and local");
+      for (const key of ["skills", ...FILE_KINDS]) onlyFor(key, "git, npm and local");
       try {
         new URL(spec);
       } catch {

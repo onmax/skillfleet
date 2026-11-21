@@ -19,7 +19,7 @@ export interface Report {
   dryRun: boolean;
   offline: boolean;
   ok: boolean;
-  sources: Omit<SourceResult, "skills">[];
+  sources: Omit<SourceResult, "skills" | "files">[];
   skills: {
     total: number;
     names: string[];
@@ -27,6 +27,23 @@ export interface Report {
     removed: string[];
     updated: string[];
   };
+  /** Instruction files, subagents and commands linked into agents' folders. */
+  files: {
+    total: number;
+    /** Every file linked, by the path it is at, with the item (`<kind>/<path>`) it is. */
+    links: { path: string; item: string; source: string; agent: string }[];
+    /** Paths linked this sync. */
+    added: string[];
+    /** Items whose file changed upstream this sync. */
+    updated: string[];
+    /** Paths unlinked this sync. */
+    removed: string[];
+    /** Links already where fleetrc would link, made by hand, which fleetrc now keeps. */
+    adopted: string[];
+    /** Paths fleetrc would link that hold a file it did not make, left as they are. */
+    foreign: string[];
+  };
+  /** Skills and files of a later source that an earlier one has; the first source wins. */
   shadowed: { skill: string; winner: string; loser: string }[];
   /** Skills whose name changed upstream only in case or Unicode form: the same skill, renamed. */
   renamed: { from: string; to: string }[];
@@ -55,12 +72,22 @@ export function formatReport(report: Report): string {
   const lines: string[] = [];
   const verb = report.dryRun ? "would link" : "linked";
   const folders = report.targets.filter((target) => !target.skipped && !target.former).length;
+  const files = report.files.total;
   lines.push(
-    `fleetrc: ${verb} ${report.skills.total} skills into ${folders} folder${folders === 1 ? "" : "s"}${report.offline ? " (offline)" : ""}`,
+    `fleetrc: ${verb} ${report.skills.total} skills into ${folders} folder${folders === 1 ? "" : "s"}${files ? ` and ${files} file${files === 1 ? "" : "s"}` : ""}${report.offline ? " (offline)" : ""}`,
   );
   if (report.skills.added.length) lines.push(`  + added: ${list(report.skills.added)}`);
   if (report.skills.updated.length) lines.push(`  ~ updated: ${list(report.skills.updated)}`);
   if (report.skills.removed.length) lines.push(`  - removed: ${list(report.skills.removed)}`);
+  const itemAt = (path: string) => report.files.links.find((link) => link.path === path);
+  for (const path of report.files.added) {
+    const link = itemAt(path);
+    lines.push(`  + ${tildify(path)}${link ? ` (${link.item} from ${link.source})` : ""}`);
+  }
+  if (report.files.updated.length) lines.push(`  ~ updated: ${list(report.files.updated)}`);
+  for (const path of report.files.removed) lines.push(`  - ${tildify(path)}`);
+  for (const path of report.files.adopted)
+    lines.push(`  adopted ${tildify(path)}: it already links where fleetrc links`);
   for (const renamed of report.renamed) lines.push(`  renamed ${renamed.from} -> ${renamed.to}`);
   for (const source of report.sources) {
     if (source.status === "updated" && source.from && source.to && source.from !== source.to)

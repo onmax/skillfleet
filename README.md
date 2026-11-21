@@ -191,6 +191,37 @@ Then `npx fleetrc init me/skills` on each machine. Your sources come first, so y
 - `hooks` run a command when files of a source change: `{ "run": "...", "on": ["mine:skills/**"] }`. A pattern is `<source>:<glob>`, and the path it matches starts at the root of the repository for a `git` source, with or without `"path"`, at the package root for `npm`, at the folder for `local`, and at `<skill>/` for an `index`. The hook gets the matched `<source>:<path>` lines in `FLEETRC_CHANGED`. A pattern that matches no file in its source gets a warning on each sync. `"report": { "run": "..." }` gets each run's report as JSON on stdin, and `hub` is a URL the report is posted to.
 - A hook gets the sync report as JSON on stdin and its `name` (which defaults to `run`) in `FLEETRC_HOOK`. A hook still running after 5 minutes is stopped.
 
+### Instruction files, subagents and commands
+
+A `git`, `npm` or `local` source can also give your agents their user-level instruction file, subagents and commands:
+
+```json
+{
+  "id": "mine",
+  "git": "me/agents",
+  "instructions": "AGENTS.md",
+  "subagents": "agents/*.md",
+  "commands": { "claude-code": "commands/**/*.md", "opencode": "opencode/commands/*.md" }
+}
+```
+
+- Each key takes a glob, or an object of globs by agent id. A glob string for `instructions` goes to every agent that reads an instruction file. A glob string for `subagents` or `commands` goes to Claude Code only, since each agent reads its own format. fleetrc copies files as they are and translates nothing, so give other agents their own files with an object.
+- `instructions` must match one file. Subagents and commands keep their path below the glob's fixed folder: `commands/**/*.md` links `commands/git/commit.md` to `~/.claude/commands/git/commit.md`, which Claude Code runs as `/git:commit`.
+- Files link like skills. fleetrc keeps a copy of a `git` or `npm` source's files and links that copy, while it links the files of a `path` clone or a `local` folder in place. `--copy` copies them instead.
+- If you edit a file from a kept copy, sync keeps your edit and holds upstream's change, as it does for skills. `fleetrc diff` and `fleetrc merge` name the file as `<kind>/<path>`, such as `fleetrc diff instructions/AGENTS.md`. `fleetrc list` shows each linked file, and `fleetrc agents` shows where each agent reads them.
+- When two sources give the same file, the first source wins. fleetrc never touches a file it didn't make, such as a hand-written `~/.claude/CLAUDE.md`: it warns and links nothing there until you move that file away. A link already pointing where fleetrc would link is kept and adopted. When a file leaves the config, or its source does, fleetrc unlinks it.
+
+| Agent          | Instruction file                     | Subagents                    | Commands                       |
+| -------------- | ------------------------------------ | ---------------------------- | ------------------------------ |
+| Claude Code    | `~/.claude/CLAUDE.md`                | `~/.claude/agents/`          | `~/.claude/commands/`          |
+| Codex          | `~/.codex/AGENTS.md`                 | `~/.codex/agents/`           |                                |
+| Grok           | `~/.grok/AGENTS.md`                  | `~/.grok/agents/`            |                                |
+| Gemini CLI     | `~/.gemini/GEMINI.md`                | `~/.gemini/agents/`          | `~/.gemini/commands/`          |
+| OpenCode       | `~/.config/opencode/AGENTS.md`       | `~/.config/opencode/agents/` | `~/.config/opencode/commands/` |
+| GitHub Copilot | `~/.copilot/copilot-instructions.md` |                              |                                |
+
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `COPILOT_HOME` and `XDG_CONFIG_HOME` move these folders. Cursor reads none of them at the user level: its docs name only a project's `.cursor/commands`.
+
 ## Agents and systems
 
 fleetrc links skills into Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, and the rest of the agents in Vercel's [`skills`](https://github.com/vercel-labs/skills) package.

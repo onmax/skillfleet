@@ -11,9 +11,9 @@ import {
 import { agentTargets, aliasOf, codexLegacyDir } from "./agents.ts";
 import { conflictLines } from "./edits.ts";
 import { exec, git } from "./exec.ts";
-import { isErrno, lstat } from "./fs.ts";
+import { isErrno, lstat, sha256 } from "./fs.ts";
 import { gitUrl, NO_GIT_REDIRECTS } from "./gitcache.ts";
-import { linkTarget } from "./linker.ts";
+import { linkTarget, samePath } from "./linker.ts";
 import {
   loadManifest,
   readConfig,
@@ -24,7 +24,7 @@ import {
 } from "./manifest.ts";
 import { paths, tildify } from "./paths.ts";
 import { installedBuild, installedCli, launcherNode, launcherPath } from "./selfinstall.ts";
-import { loadState } from "./state.ts";
+import { loadState, type State } from "./state.ts";
 import { manifestSpec } from "./sync.ts";
 import {
   formatTimerStatus,
@@ -413,7 +413,10 @@ export async function doctor(manifest?: string): Promise<Check[]> {
         ]
       : []),
   ];
-  const conflicts = conflictLines(loadState());
+  const state = loadState();
+  const fileLinks = fileLinksCheck(state);
+  if (fileLinks) checks.push(fileLinks);
+  const conflicts = conflictLines(state);
   checks.push({
     name: "merge conflicts",
     ok: conflicts.length === 0,
@@ -429,6 +432,36 @@ export async function doctor(manifest?: string): Promise<Check[]> {
         : problems.join("; "),
   });
   return checks;
+}
+
+/**
+ * Whether each instruction file, subagent and command sync linked is still there as it left it.
+ * Undefined when sync linked none.
+ */
+function fileLinksCheck(state: State): Check | undefined {
+  const links = Object.entries(state.links ?? {});
+  if (links.length === 0) return undefined;
+  const problems: string[] = [];
+  for (const [path, record] of links) {
+    const shown = tildify(path);
+    const stat = lstat(path);
+    if (!existsSync(record.target))
+      problems.push(`${shown} links to ${tildify(record.target)}, which is gone`);
+    else if (!stat) problems.push(`${shown} (${record.item}) is gone`);
+    else if (record.link === "symlink") {
+      if (!stat.isSymbolicLink() || !samePath(linkTarget(path), record.target))
+        problems.push(`${shown} is no longer the link to ${record.item}`);
+    } else if (!stat.isFile() || sha256(readFileSync(path)) !== record.hash)
+      problems.push(`${shown}, a copy of ${record.item}, changed`);
+  }
+  return {
+    name: "file links",
+    ok: problems.length === 0,
+    detail:
+      problems.length === 0
+        ? `${links.length} file${links.length === 1 ? "" : "s"} linked as the last sync left them`
+        : `${problems.join("; ")}; run \`fleetrc sync\``,
+  };
 }
 
 /** What the agent folder `dir`, a link, leads to. */

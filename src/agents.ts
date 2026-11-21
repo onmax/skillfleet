@@ -2,6 +2,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { type AgentInfo, detectAgents, getSupportedAgents } from "skills";
+import { agentKindPaths, type FileKind } from "./kinds.ts";
 import type { Manifest } from "./manifest.ts";
 
 export interface AgentTarget {
@@ -130,6 +131,8 @@ export interface AgentRow {
   detected: boolean;
   /** The folder fleetrc links its skills into under the manifest's `agents`, when it does. */
   linkedInto?: string;
+  /** Where fleetrc links each kind of file it gives this agent: instructions, subagents, commands. */
+  kinds?: Partial<Record<FileKind, string>>;
 }
 
 /** Every agent id `skills` knows, for `fleetrc agents`. `agents` is the manifest's choice, when there is one. */
@@ -148,6 +151,10 @@ export async function agentRows(agents?: Manifest["agents"]): Promise<AgentRow[]
     ...(() => {
       const target = targets.find((candidate) => candidate.agents.includes(agent.id));
       return target ? { linkedInto: target.dir } : {};
+    })(),
+    ...(() => {
+      const kinds = agentKindPaths(agent.id);
+      return Object.keys(kinds).length > 0 ? { kinds } : {};
     })(),
   }));
 }

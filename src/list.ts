@@ -1,4 +1,4 @@
-// `fleetrc list --json`: the skills linked on this machine, for programs built on fleetrc. It
+// `fleetrc list --json`: the skills and files linked on this machine, for programs built on fleetrc. It
 // reads state.json alone, with no manifest and no network, so entry.ts runs it without the rest of
 // the CLI. The shape is a contract: a later version only adds fields, and bumps `version` for any
 // other change.
@@ -16,12 +16,26 @@ export interface ListedSkill {
   changedAt: string;
 }
 
+export interface ListedFile {
+  /** Where the file is linked, in an agent's folder. */
+  path: string;
+  /** `<kind>/<path in the source>`, such as `instructions/AGENTS.md`. */
+  item: string;
+  kind: string;
+  source: string;
+  agent: string;
+  /** The file it links to, in the store or a folder linked in place. */
+  target: string;
+}
+
 export interface SkillList {
   version: 1;
   /** When a sync last added, removed or changed a skill; null before the first. */
   lastChange: string | null;
   /** Sorted by name. */
   skills: ListedSkill[];
+  /** Instruction files, subagents and commands, sorted by path. */
+  files: ListedFile[];
 }
 
 /** The skills state.json records. A state.json that is missing or does not read lists none. */
@@ -39,6 +53,19 @@ export function skillList(): SkillList {
         if (!record) return [];
         const { source, dir, changedAt } = record;
         return [{ name, source, dir, changedAt }];
+      }),
+    files: Object.entries(isRecord(state.links) ? state.links : {})
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .flatMap(([path, record]) => {
+        if (!isRecord(record)) return [];
+        const { item, kind, source, agent, target } = record;
+        return typeof item === "string" &&
+          typeof kind === "string" &&
+          typeof source === "string" &&
+          typeof agent === "string" &&
+          typeof target === "string"
+          ? [{ path, item, kind, source, agent, target }]
+          : [];
       }),
   };
 }

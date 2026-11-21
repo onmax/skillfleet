@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
+import { agentsWith, FILE_KINDS } from "../src/kinds.ts";
 import { loadManifest, parseManifest } from "../src/manifest.ts";
 
 it("limits root hook globs without dropping sources from extensions that ignore those hooks", async () => {
@@ -84,6 +85,9 @@ const sourceSamples: Record<string, unknown> = {
   npm: "pkg",
   registry: "https://registry.example",
   local: "/tmp/y",
+  instructions: "AGENTS.md",
+  subagents: { "claude-code": "agents/*.md", opencode: "opencode/agents/*.md" },
+  commands: "commands/**/*.md",
 };
 
 describe("schema.json", () => {
@@ -176,6 +180,15 @@ describe("schema.json", () => {
     expect(() => parseManifest("m.json", { fleet: ["laptop", "tag:web_1"] })).toThrow(
       'm.json: fleet[1] "tag:web_1" is not a Tailscale tag: write tag: and then a letter followed by letters, digits or dashes, such as "tag:servers"',
     );
+  });
+
+  it("names, for each kind of file, exactly the agents the parser takes", () => {
+    const common = schema.$defs.common.properties as unknown as Record<
+      string,
+      { oneOf: { propertyNames?: { enum: string[] } }[] }
+    >;
+    for (const kind of FILE_KINDS)
+      expect(common[kind]!.oneOf[1]!.propertyNames!.enum, kind).toEqual(agentsWith(kind));
   });
 
   it("asks for path wherever the parser does: adopt and followLinks on a git source", () => {

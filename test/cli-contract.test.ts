@@ -178,6 +178,38 @@ describe("errors", () => {
       /^claude-code +installed {2}linked into ~?.*skills$/m,
     );
   });
+
+  it("agents shows where each agent reads its instruction file, subagents and commands", async () => {
+    const m = machine();
+    type Row = { id: string; kinds?: Record<string, string> };
+    const rows = await m.json<Row[]>("agents");
+    expect(rows.find((row) => row.id === "claude-code")!.kinds).toEqual({
+      instructions: m.at(".claude/CLAUDE.md"),
+      subagents: m.at(".claude/agents"),
+      commands: m.at(".claude/commands"),
+    });
+    expect(rows.find((row) => row.id === "codex")!.kinds).toEqual({
+      instructions: m.at(".codex/AGENTS.md"),
+      subagents: m.at(".codex/agents"),
+    });
+    expect(rows.find((row) => row.id === "github-copilot")!.kinds).toEqual({
+      instructions: m.at(".copilot/copilot-instructions.md"),
+    });
+    expect(rows.find((row) => row.id === "cursor")!.kinds).toBeUndefined();
+    // The agent's home moves with its override.
+    const moved = await m.runWith(
+      { env: { CLAUDE_CONFIG_DIR: m.at("elsewhere") } },
+      "agents",
+      "--json",
+    );
+    expect(
+      (JSON.parse(moved.stdout) as Row[]).find((row) => row.id === "claude-code")!.kinds!
+        .instructions,
+    ).toBe(m.at("elsewhere/CLAUDE.md"));
+    expect((await m.run("agents")).stdout).toMatch(
+      /^claude-code .*\n +instructions ~?.*CLAUDE\.md, subagents ~?.*agents, commands ~?.*commands$/m,
+    );
+  });
 });
 
 describe("--dry-run changes nothing", () => {
@@ -327,7 +359,12 @@ describe("list --json, the API programs built on fleetrc read", () => {
     const fresh = machine({ agents: false });
     const empty = await fresh.run("list", "--json");
     expect(empty.code, empty.stderr).toBe(0);
-    expect(JSON.parse(empty.stdout)).toEqual({ version: 1, lastChange: null, skills: [] });
+    expect(JSON.parse(empty.stdout)).toEqual({
+      version: 1,
+      lastChange: null,
+      skills: [],
+      files: [],
+    });
     expect(existsSync(fresh.stateDir)).toBe(false);
     expect(existsSync(fresh.at(".cache"))).toBe(false);
 
@@ -349,7 +386,7 @@ describe("list --json, the API programs built on fleetrc read", () => {
       lastChange: string;
       skills: { name: string; source: string; dir: string; changedAt: string }[];
     };
-    expect(Object.keys(listed)).toEqual(["version", "lastChange", "skills"]);
+    expect(Object.keys(listed)).toEqual(["version", "lastChange", "skills", "files"]);
     expect(listed.version).toBe(1);
     expect(Date.parse(listed.lastChange)).not.toBeNaN();
     expect(listed.skills.map((skill) => skill.name)).toEqual(["alpha", "zeta"]);
@@ -396,12 +433,48 @@ describe("list --json, the API programs built on fleetrc read", () => {
           { name: "epoch", source: "mine", dir, changedAt: "1970-01-01T00:00:00.000Z" },
           { name: "legacy", source: "mine", dir, changedAt: addedAt },
         ],
+        files: [],
       });
     }
     const text = await m.run("list");
     expect(text.code, text.stderr).toBe(0);
     expect(text.stdout).toBe(
       `epoch  mine  ${join("~", "mine")}\nlegacy  mine  ${join("~", "mine")}\n`,
+    );
+  });
+
+  it("lists the instruction files, subagents and commands linked, sorted by path", async () => {
+    const m = machine();
+    const mine = join(m.root, "mine");
+    mkdirSync(join(mine, "agents"), { recursive: true });
+    writeFileSync(join(mine, "AGENTS.md"), "be brief\n");
+    writeFileSync(join(mine, "agents", "reviewer.md"), "review\n");
+    const manifest = m.manifest({
+      agents: ["claude-code"],
+      sources: [{ id: "mine", local: mine, instructions: "AGENTS.md", subagents: "agents/*.md" }],
+    });
+    expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
+    const listed = await m.json<SkillList>("list");
+    expect(listed.files).toEqual([
+      {
+        path: m.at(".claude/CLAUDE.md"),
+        item: "instructions/AGENTS.md",
+        kind: "instructions",
+        source: "mine",
+        agent: "claude-code",
+        target: join(mine, "AGENTS.md"),
+      },
+      {
+        path: m.at(".claude/agents/reviewer.md"),
+        item: "subagents/agents/reviewer.md",
+        kind: "subagents",
+        source: "mine",
+        agent: "claude-code",
+        target: join(mine, "agents", "reviewer.md"),
+      },
+    ]);
+    expect((await m.run("list")).stdout).toContain(
+      `instructions/AGENTS.md  mine  ${join("~", ".claude", "CLAUDE.md")}\n`,
     );
   });
 });
