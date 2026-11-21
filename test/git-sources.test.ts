@@ -47,14 +47,14 @@ function commitRaw(m: Machine, r: Remote, files: Record<string, string>): string
 
 const nfc = (list: string[]) => list.map((name) => name.normalize("NFC"));
 
-/** A hook script that appends SKILLFLEET_CHANGED to `log`, one JSON line per run. */
+/** A hook script that appends FLEETRC_CHANGED to `log`, one JSON line per run. */
 function changedLog(m: Machine) {
   const log = join(m.root, "changed.jsonl");
   const script = join(m.root, "changed.mjs");
   writeFileSync(
     script,
     `import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.env.SKILLFLEET_CHANGED.split("\\n")) + "\\n");`,
+appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.env.FLEETRC_CHANGED.split("\\n")) + "\\n");`,
   );
   return {
     run: `"${process.execPath}" "${script}"`,
@@ -462,7 +462,7 @@ describe("names macOS and Windows fold together", () => {
     expect(read(join(work, "skills", nfd, "SKILL.md"))).toBe(
       `${cafe("ONE", "two", "three")}mine\n`,
     );
-    const recorded = JSON.parse(read(join(m.root, "manifest", ".skillfleet", "manifest.json"))) as {
+    const recorded = JSON.parse(read(join(m.root, "manifest", ".fleetrc", "manifest.json"))) as {
       forks: Record<string, unknown>;
       sources: { exclude?: string[] }[];
     };
@@ -475,7 +475,7 @@ describe("names macOS and Windows fold together", () => {
     const removed = await m.run("remove", typed);
     expect(removed.code, removed.stdout + removed.stderr).toBe(0);
     expect(names(m.at(".claude/skills"))).toEqual(["mine", "plain"]);
-    const manifest = JSON.parse(read(join(m.root, "manifest", ".skillfleet", "manifest.json"))) as {
+    const manifest = JSON.parse(read(join(m.root, "manifest", ".fleetrc", "manifest.json"))) as {
       sources: { exclude?: string[] }[];
     };
     expect(manifest.sources[1]!.exclude).toEqual([nfd]);
@@ -603,7 +603,7 @@ describe("manifest specs", () => {
         agents: ["claude-code"],
         sources: [{ id: "vendor", git: vendor.url, include: [skill] }],
       });
-    const team = remote(m, "team", { ".skillfleet/manifest.json": manifest("tool") });
+    const team = remote(m, "team", { ".fleetrc/manifest.json": manifest("tool") });
     m.git(team.work, "checkout", "--quiet", "-b", "dev");
     writeFiles(team.work, { "team/fleet.json": manifest("extra") });
     m.git(team.work, "add", "-A");
@@ -612,15 +612,15 @@ describe("manifest specs", () => {
     return team;
   }
   const configured = (m: Machine) =>
-    (JSON.parse(read(m.at(".config/skillfleet/config.json"))) as { manifest: string }).manifest;
+    (JSON.parse(read(m.at(".config/fleetrc/config.json"))) as { manifest: string }).manifest;
 
-  it("D2. a GitHub page link without .git is a repository holding .skillfleet/manifest.json", async () => {
+  it("D2. a GitHub page link without .git is a repository holding .fleetrc/manifest.json", async () => {
     const m = machine();
     hostAt(m, "https://github.com/org/team", teamRepo(m));
     const init = await m.run("init", "https://github.com/org/team", "--no-hooks");
     expect(init.code, init.stdout + init.stderr).toBe(0);
     expect(names(m.at(".claude/skills"))).toEqual(["tool"]);
-    expect(configured(m)).toBe("https://github.com/org/team//.skillfleet/manifest.json");
+    expect(configured(m)).toBe("https://github.com/org/team//.fleetrc/manifest.json");
     expect((await m.json("sync")).ok).toBe(true);
   });
 
@@ -641,7 +641,7 @@ describe("manifest specs", () => {
     const init = await m.run("init", team.url, "--no-hooks");
     expect(init.code, init.stdout + init.stderr).toBe(0);
     expect(names(m.at(".claude/skills"))).toEqual(["tool"]);
-    expect(configured(m)).toBe(`${team.url}//.skillfleet/manifest.json`);
+    expect(configured(m)).toBe(`${team.url}//.fleetrc/manifest.json`);
     expect((await m.json("sync")).ok).toBe(true);
   });
 });

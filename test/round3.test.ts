@@ -1,5 +1,5 @@
-// Round three of trying to break skillfleet, against the integration branch that fixed round two.
-// Each test asserts what skillfleet should do; a failing test is a break still open. Every run uses
+// Round three of trying to break fleetrc, against the integration branch that fixed round two.
+// Each test asserts what fleetrc should do; a failing test is a break still open. Every run uses
 // the fixture's temporary HOME, and every scheduler call goes to the fixture's fake.
 import {
   existsSync,
@@ -137,7 +137,7 @@ describe("linked skill folders", () => {
             ? { id: "personal", git: r.url, skills: "skills/*" }
             : { id: "personal", git: r.url, path: clone(m, r, "code/skills"), skills: "skills/*" };
         m.manifest({ agents: ["claude-code"], sources: [source] });
-        await m.run("init", join(m.root, "manifest", ".skillfleet", "manifest.json"), "--no-hooks");
+        await m.run("init", join(m.root, "manifest", ".fleetrc", "manifest.json"), "--no-hooks");
         const report = await m.json("sync");
         expect(report.errors).toEqual([]);
         expect(report.skills.names).toEqual(["tool"]);
@@ -292,7 +292,7 @@ describe("the timer's own record of its node", () => {
     "R5-10. doctor and self-install read the timer's node from a unit whose state path systemd had to escape",
     () => {
       // A home folder with % in its name, which systemd writes as %% in ExecStart.
-      const root = mkdtempSync(join(tmpdir(), "skillfleet-r5-50%off-"));
+      const root = mkdtempSync(join(tmpdir(), "fleetrc-r5-50%off-"));
       const saved = { state: process.env.XDG_STATE_HOME, config: process.env.XDG_CONFIG_HOME };
       process.env.XDG_STATE_HOME = join(root, "state");
       process.env.XDG_CONFIG_HOME = join(root, "config");
@@ -300,17 +300,17 @@ describe("the timer's own record of its node", () => {
         const cli = join(
           root,
           "state",
-          "skillfleet",
+          "fleetrc",
           "app",
           "node_modules",
-          "skillfleet",
+          "fleetrc",
           "dist",
           "cli.mjs",
         );
         mkdirSync(join(root, "config", "systemd", "user"), { recursive: true });
         // As @vite-hub/schedule writes it: % doubled, and the argument quoted.
         writeFileSync(
-          join(root, "config", "systemd", "user", "skillfleet-sync.service"),
+          join(root, "config", "systemd", "user", "fleetrc-sync.service"),
           `[Service]\nType=oneshot\nExecStart=/opt/node/bin/node "${cli.replaceAll("%", "%%")}" sync\n`,
         );
         expect(timerNode()?.node).toBe("/opt/node/bin/node");
@@ -383,7 +383,7 @@ describe("init clones an adopt source before adopting", () => {
   });
 
   it("R5-12. init moves nothing when one of its moves would fail", () => {
-    const root = mkdtempSync(join(tmpdir(), "skillfleet-r5-12-"));
+    const root = mkdtempSync(join(tmpdir(), "fleetrc-r5-12-"));
     try {
       const at = (...parts: string[]) => join(root, ...parts);
       for (const name of ["a", "b"]) mkdirSync(at("agent", name), { recursive: true });

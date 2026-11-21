@@ -294,7 +294,7 @@ async function fetchCommit(
   if (fetched.code === 0) {
     const commit = await gitOut(["rev-parse", "--verify", "FETCH_HEAD^{commit}"], repo);
     // A ref of its own, so the next fetch sends only what changed.
-    await git(["update-ref", "refs/skillfleet/fetched", commit], { cwd: repo });
+    await git(["update-ref", "refs/fleetrc/fetched", commit], { cwd: repo });
     return commit;
   }
   // A full commit id is fetched as it is; a remote gives no way to look up a shorter one, so it
@@ -311,8 +311,8 @@ async function fetchCommit(
       ...(shallow ? ["--unshallow"] : []),
       "--",
       url,
-      "+refs/heads/*:refs/skillfleet/heads/*",
-      "+refs/tags/*:refs/skillfleet/tags/*",
+      "+refs/heads/*:refs/fleetrc/heads/*",
+      "+refs/tags/*:refs/fleetrc/tags/*",
     ],
     { cwd: repo, timeoutMs: 600_000 },
   );

@@ -18,7 +18,7 @@ describe("review regression cases", () => {
     const work = clone(m, mine, "code/mine");
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     mine.commit({
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code", "codex"],
         sources: [
           { id: "mine", git: mine.url, path: work, skills: "skills/*", adopt: true },
@@ -29,7 +29,7 @@ describe("review regression cases", () => {
     m.git(work, "pull", "--quiet");
     const init = await m.run(
       "init",
-      `${mine.url}//.skillfleet/manifest.json`,
+      `${mine.url}//.fleetrc/manifest.json`,
       "--no-hooks",
       ...(copy ? ["--copy"] : []),
     );
@@ -47,7 +47,7 @@ describe("review regression cases", () => {
       const m = machine();
       const mine = remote(m, "mine", skills("skills/", "ztool"));
       const team = remote(m, "team", {
-        ".skillfleet/manifest.json": JSON.stringify({
+        ".fleetrc/manifest.json": JSON.stringify({
           agents: ["claude-code"],
           sources: [
             { id: "mine", git: mine.url, path: "~/code/mine", skills: "skills/*", adopt: true },
@@ -128,7 +128,7 @@ describe("review regression cases", () => {
         sources: [{ id: "vendor", git: vendor.url }],
       });
       expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-      const record = m.at(".claude/skills/.skillfleet-manifest.json");
+      const record = m.at(".claude/skills/.fleetrc-manifest.json");
       chmodSync(record, 0);
       try {
         vendor.commit({ "skills/newtool/SKILL.md": skillMd("newtool") });
@@ -147,7 +147,7 @@ describe("review regression cases", () => {
   it("finishes metadata after the new cache tree was published", async () => {
     const m = machine();
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
+      ".fleetrc/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
     });
     expect((await m.run("init", team.url, "--no-hooks")).code).toBe(0);
     const cache = join(m.stateDir, "cache/manifests");
@@ -156,7 +156,7 @@ describe("review regression cases", () => {
     const oldMarker = read(join(cache, marker));
     renameSync(join(cache, key), join(cache, `${key}.424242.old`));
     team.commit({
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [],
         fleet: ["new-host"],
@@ -169,7 +169,7 @@ describe("review regression cases", () => {
     const offline = await m.run("sync", "--offline");
     expect(offline.code, offline.stderr).toBe(0);
     expect(read(join(cache, marker))).toBe(newMarker);
-    expect(JSON.parse(read(join(cache, key, ".skillfleet", "manifest.json"))).fleet).toEqual([
+    expect(JSON.parse(read(join(cache, key, ".fleetrc", "manifest.json"))).fleet).toEqual([
       "new-host",
     ]);
     expect(existsSync(join(cache, `${key}.424242.pending`))).toBe(false);

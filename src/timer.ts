@@ -11,10 +11,10 @@ import {
 import { parseCronExpression } from "cron-schedule";
 import { exec } from "./exec.ts";
 import { isRecord, readJsonOrNothing, writeJson } from "./fs.ts";
-import { stateDir, tildify, xdgDir } from "./paths.ts";
-import { launcherPath } from "./selfinstall.ts";
+import { paths, stateDir, tildify, xdgDir } from "./paths.ts";
+import { findOnPath, launcherPath, timerEnv } from "./selfinstall.ts";
 
-export const TIMER_NAME = "skillfleet-sync";
+export const TIMER_NAME = "fleetrc-sync";
 
 export interface TimerSpec {
   name: string;
@@ -38,6 +38,23 @@ export interface InstalledTimer {
 }
 
 export type TimerStatus = OsScheduleStatus;
+
+/** The timer that runs `<node> <cli> sync` on the manifest's `timer` schedule. */
+export function syncTimerSpec(
+  timer: { cron: string; timeZone?: string },
+  node: string,
+  cli: string,
+): TimerSpec {
+  return {
+    name: TIMER_NAME,
+    cron: timer.cron,
+    timeZone: timer.timeZone ?? "local",
+    command: [node, cli, "sync"],
+    // FLEETRC_TIMER puts the time of each run in the log.
+    env: { ...timerEnv(findOnPath("git"), node), FLEETRC_TIMER: "1" },
+    logDir: paths.logs(),
+  };
+}
 
 /** Why `cron` is not a five-field cron the OS timers run, or undefined when it is. */
 export function cronProblem(cron: string): string | undefined {
@@ -93,7 +110,7 @@ const unxml = (text: string) =>
 
 /**
  * What to tell the user about `resource`, the unit, plist or task that holds the timer's name and
- * that this install did not write. When it is another skillfleet install's (another HOME or
+ * that this install did not write. When it is another fleetrc install's (another HOME or
  * XDG_STATE_HOME under the same user), it names that install's state folder and how to remove it.
  */
 export function foreignTimer(name: string, resource: string): string {
@@ -109,20 +126,16 @@ export function foreignTimer(name: string, resource: string): string {
     plain.match(/(?:<string>|")([^<"]+?)[\\/]app[\\/]cli\.mjs(?:<\/string>|")/)?.[1] ??
     plain.match(/([^\s"'<>]+)[\\/]app[\\/]cli\.mjs/)?.[1];
   if (!state)
-    return `${scheduler} already has a timer named ${name} that skillfleet did not install: ${tildify(resource)}. Remove it yourself, then run \`skillfleet timer install\` again.`;
+    return `${scheduler} already has a timer named ${name} that fleetrc did not install: ${tildify(resource)}. Remove it yourself, then run \`fleetrc timer install\` again.`;
   const home =
     plain.match(/<key>HOME<\/key>\s*<string>([^<]*)<\/string>/)?.[1] ??
     plain.match(/^Environment="?HOME=([^"\n]*)"?$/m)?.[1];
-  const launcher = join(
-    state,
-    "bin",
-    process.platform === "win32" ? "skillfleet.cmd" : "skillfleet",
-  );
+  const launcher = join(state, "bin", process.platform === "win32" ? "fleetrc.cmd" : "fleetrc");
   const remove =
     process.platform === "win32"
       ? `run \`${launcher} timer remove\` with the LOCALAPPDATA that install uses`
-      : `run \`${home ? `HOME=${shQuote(home)} ` : ""}XDG_STATE_HOME=${shQuote(dirname(state))} ${existsSync(launcher) ? shQuote(launcher) : "npx skillfleet@latest"} timer remove\``;
-  return `the ${name} timer belongs to another skillfleet install, whose state folder is ${tildify(state)} (${tildify(resource)}). One user account has one skillfleet timer. To move it to this one, remove it there: ${remove}; then run \`skillfleet timer install\` here again.`;
+      : `run \`${home ? `HOME=${shQuote(home)} ` : ""}XDG_STATE_HOME=${shQuote(dirname(state))} ${existsSync(launcher) ? shQuote(launcher) : "npx fleetrc@latest"} timer remove\``;
+  return `the ${name} timer belongs to another fleetrc install, whose state folder is ${tildify(state)} (${tildify(resource)}). One user account has one fleetrc timer. To move it to this one, remove it there: ${remove}; then run \`fleetrc timer install\` here again.`;
 }
 
 /**
@@ -176,8 +189,8 @@ export function systemdMissing(
 export function noSystemdMessage(cron = "*/30 * * * *"): string {
   const logs = join(stateDir(), "logs");
   const log = join(logs, `${TIMER_NAME}.log`);
-  // cron's shell opens the log before skillfleet starts, so the line makes its folder first.
-  return `this machine has no systemd user manager (a container, WSL1, or a system that boots without systemd), so skillfleet can't install a timer here. Run \`skillfleet sync\` from cron instead (\`crontab -e\`, then a line such as: ${cron} mkdir -p ${shQuote(logs)} && ${shQuote(launcherPath())} sync >> ${shQuote(log)} 2>&1), or let the session hooks start syncs (\`skillfleet hook install\`)`;
+  // cron's shell opens the log before fleetrc starts, so the line makes its folder first.
+  return `this machine has no systemd user manager (a container, WSL1, or a system that boots without systemd), so fleetrc can't install a timer here. Run \`fleetrc sync\` from cron instead (\`crontab -e\`, then a line such as: ${cron} mkdir -p ${shQuote(logs)} && ${shQuote(launcherPath())} sync >> ${shQuote(log)} 2>&1), or let the session hooks start syncs (\`fleetrc hook install\`)`;
 }
 
 /** A `systemctl` failure that means systemd itself is missing, not that one call went wrong. */
@@ -194,18 +207,18 @@ interface ScheduleError {
   data?: unknown;
 }
 
-/** A scheduler failure, said in skillfleet's terms: the manifest's `timer` fields and its commands. */
+/** A scheduler failure, said in fleetrc's terms: the manifest's `timer` fields and its commands. */
 function explain(error: ScheduleError): string {
   const scheduler = SCHEDULERS[process.platform] ?? "the scheduler";
-  const bug = `skillfleet asked ${scheduler} for a timer it refused, which is a bug in skillfleet; please report it at https://github.com/onmax/skillfleet/issues`;
+  const bug = `fleetrc asked ${scheduler} for a timer it refused, which is a bug in fleetrc; please report it at https://github.com/onmax/fleetrc/issues`;
   if (osScheduleErrors.SCHEDULE_OS_COMMAND_FAILED.is(error)) {
     const { command, exitCode, output } = error.data;
     if (meansNoSystemd(command, exitCode, output)) return noSystemdMessage();
     const why = `\`${command}\` failed with exit code ${exitCode}: ${output || "no output"}`;
     if (process.platform === "linux" && /connect to bus|XDG_RUNTIME_DIR/i.test(output))
-      return `${why}\n  fix: this login has no systemd user manager; run \`loginctl enable-linger ${userInfo().username}\`, or run \`skillfleet timer install\` from a login session`;
+      return `${why}\n  fix: this login has no systemd user manager; run \`loginctl enable-linger ${userInfo().username}\`, or run \`fleetrc timer install\` from a login session`;
     if (process.platform === "darwin" && /domain/i.test(output))
-      return `${why}\n  fix: over SSH, launchd has no session for you until you log in at the Mac's screen; log in there once, then run \`skillfleet timer install\` again`;
+      return `${why}\n  fix: over SSH, launchd has no session for you until you log in at the Mac's screen; log in there once, then run \`fleetrc timer install\` again`;
     return why;
   }
   if (osScheduleErrors.SCHEDULE_OS_CRON_UNSUPPORTED.is(error)) {
@@ -219,7 +232,7 @@ function explain(error: ScheduleError): string {
   if (osScheduleErrors.SCHEDULE_OS_NAME_TAKEN.is(error))
     return foreignTimer(error.data.name, error.data.resource);
   if (osScheduleErrors.SCHEDULE_OS_PLATFORM_UNSUPPORTED.is(error))
-    return `skillfleet's timer runs on Linux with systemd, macOS and Windows, not on ${error.data.platform}; run \`skillfleet sync\` from cron or another scheduler instead`;
+    return `fleetrc's timer runs on Linux with systemd, macOS and Windows, not on ${error.data.platform}; run \`fleetrc sync\` from cron or another scheduler instead`;
   if (osScheduleErrors.SCHEDULE_OS_INVALID_OPTIONS.is(error))
     return `${bug}: ${error.data.problem}`;
   if (osScheduleErrors.SCHEDULE_OS_OPTION_UNSUPPORTED.is(error))
@@ -270,7 +283,7 @@ export async function installTimer(spec: TimerSpec): Promise<InstalledTimer> {
   };
 }
 
-/** The spec skillfleet last installed and the files that hold it, so a dry run can tell when nothing would change. */
+/** The spec fleetrc last installed and the files that hold it, so a dry run can tell when nothing would change. */
 interface TimerRecord {
   spec: TimerSpec;
   files: string[];
@@ -287,8 +300,8 @@ export function forgetTimer() {
 }
 
 /**
- * Whether `spec` is the timer skillfleet installed last, with its files still in place. Undefined
- * when there is no record of an install (an older skillfleet, or none).
+ * Whether `spec` is the timer fleetrc installed last, with its files still in place. Undefined
+ * when there is no record of an install (an older fleetrc, or none).
  */
 export function sameAsInstalled(spec: TimerSpec): boolean | undefined {
   const raw = readJsonOrNothing(recordFile());
@@ -300,7 +313,7 @@ export function sameAsInstalled(spec: TimerSpec): boolean | undefined {
   return JSON.stringify(record.spec) === JSON.stringify(spec);
 }
 
-/** The schedule of the timer skillfleet installed last, from its record. */
+/** The schedule of the timer fleetrc installed last, from its record. */
 export function installedSchedule(): { cron: string; timeZone: string } | undefined {
   const raw = readJsonOrNothing(recordFile());
   if (!isRecord(raw) || !isRecord(raw.spec)) return undefined;
@@ -319,10 +332,10 @@ export function scheduleDrift(timer: { cron: string; timeZone?: string }): strin
     return undefined;
   const zone = (spec: { timeZone: string }) =>
     spec.timeZone === "local" ? "" : ` (${spec.timeZone})`;
-  return `the manifest's timer is now "${want.cron}"${zone(want)}, but the installed timer runs on "${installed.cron}"${zone(installed)}; run \`skillfleet timer install\` to apply it`;
+  return `the manifest's timer is now "${want.cron}"${zone(want)}, but the installed timer runs on "${installed.cron}"${zone(installed)}; run \`fleetrc timer install\` to apply it`;
 }
 
-/** The files the OS scheduler reads the timer's command from, where skillfleet's timer would be. */
+/** The files the OS scheduler reads the timer's command from, where fleetrc's timer would be. */
 function timerCommandFiles(): string[] {
   const raw = readJsonOrNothing(recordFile());
   const recorded =
@@ -388,7 +401,7 @@ export function commandArgs(text: string): string[] | undefined {
 /** The program a systemd unit, launchd plist or Task Scheduler wrapper of @vite-hub/schedule runs. */
 export const commandNode = (text: string): string | undefined => commandArgs(text)?.[0];
 
-/** The node skillfleet's installed timer runs, and the file that names it. */
+/** The node fleetrc's installed timer runs, and the file that names it. */
 export function timerNode(): { file: string; node: string } | undefined {
   const app = join(stateDir(), "app");
   // Windows paths compare without case.
@@ -433,7 +446,7 @@ export async function missingTimer(status: TimerStatus): Promise<string> {
 
 /** One line about the timer for `status` and `timer status`. */
 export function formatTimerStatus(status: TimerStatus): string {
-  if (!status.installed) return "not installed; run `skillfleet timer install`";
+  if (!status.installed) return "not installed; run `fleetrc timer install`";
   const parts = [`installed (${timerKind(status.platform)})`];
   if (status.running) parts.push("running now");
   if (status.lastRunAt) parts.push(`last run ${status.lastRunAt.toISOString()}`);

@@ -34,7 +34,7 @@ async function editedVendoredSkill(options: Parameters<typeof machine>[0] = {}) 
     ],
   });
   expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-  // Edited through the agent folder: the link leads into skillfleet's copy.
+  // Edited through the agent folder: the link leads into fleetrc's copy.
   const local = lines("one", "TWO (mine)", "three", "four", "five");
   writeFileSync(m.at(".claude/skills/tool/SKILL.md"), local);
   return { m, work, vendor, manifest, local };
@@ -115,8 +115,7 @@ describe("edited vendored skills", () => {
     expect(report.held).toEqual([
       {
         source: "vendor",
-        reason:
-          "tool has unresolved merge conflicts; resolve them, then run `skillfleet merge tool`",
+        reason: "tool has unresolved merge conflicts; resolve them, then run `fleetrc merge tool`",
         files: ["SKILL.md"],
       },
     ]);
@@ -210,7 +209,7 @@ describe("forks of sources without git history", () => {
     // Nothing moved, and the manifest records no fork.
     expect(existsSync(join(work, "skills", "drop"))).toBe(false);
     expect(JSON.parse(read(manifest)).forks).toBeUndefined();
-    // A fork an older skillfleet recorded is refused by diff and merge with the same reason.
+    // A fork an older fleetrc recorded is refused by diff and merge with the same reason.
     const raw = JSON.parse(read(manifest));
     raw.forks = { drop: { from: site.url, path: "drop", base: "x" } };
     writeFileSync(manifest, JSON.stringify(raw));

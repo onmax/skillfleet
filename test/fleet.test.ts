@@ -51,7 +51,7 @@ else {
   process.exit(run.status ?? 1);
 }`,
   );
-  if (isWindows) return { SKILLFLEET_SSH: script };
+  if (isWindows) return { FLEETRC_SSH: script };
   const ssh = join(dir, "ssh");
   writeFileSync(ssh, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`);
   chmodSync(ssh, 0o755);
@@ -89,7 +89,7 @@ function peerAddresses(peers: ReturnType<typeof peer>[]) {
 }
 
 /**
- * A fake `tailscale` for SKILLFLEET_TAILSCALE: prints `output` (JSON for an object) and exits with
+ * A fake `tailscale` for FLEETRC_TAILSCALE: prints `output` (JSON for an object) and exits with
  * `code`, and touches `<dir>/tailscale-ran` so a test can tell it was asked.
  */
 function fakeTailscale(dir: string, output: object | string, code = 0): string {
@@ -106,15 +106,15 @@ process.exit(${code});`,
   return script;
 }
 
-/** Runs `body` with `SKILLFLEET_TAILSCALE` set to `program`. */
+/** Runs `body` with `FLEETRC_TAILSCALE` set to `program`. */
 async function withTailscale<T>(program: string, body: () => Promise<T>): Promise<T> {
-  const saved = process.env.SKILLFLEET_TAILSCALE;
-  process.env.SKILLFLEET_TAILSCALE = program;
+  const saved = process.env.FLEETRC_TAILSCALE;
+  process.env.FLEETRC_TAILSCALE = program;
   try {
     return await body();
   } finally {
-    if (saved === undefined) delete process.env.SKILLFLEET_TAILSCALE;
-    else process.env.SKILLFLEET_TAILSCALE = saved;
+    if (saved === undefined) delete process.env.FLEETRC_TAILSCALE;
+    else process.env.FLEETRC_TAILSCALE = saved;
   }
 }
 
@@ -130,7 +130,7 @@ describe("fleet", () => {
       fleet: ["localhost", "gone.example"],
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-    // What `timer install` does: the copy of skillfleet that hosts run.
+    // What `timer install` does: the copy of fleetrc that hosts run.
     expect((await m.run("self-install")).code).toBe(0);
     const env = sshShim(m);
 
@@ -206,18 +206,18 @@ describe("fleet", () => {
   });
 
   it.skipIf(isWindows)(
-    "R3-6. fleet upgrade on a host whose launcher's node is gone says so, not that skillfleet is missing",
+    "R3-6. fleet upgrade on a host whose launcher's node is gone says so, not that fleetrc is missing",
     () => {
       const m = machine();
       const state = join(m.root, "state");
-      const launcher = join(state, "skillfleet", "bin", "skillfleet");
+      const launcher = join(state, "fleetrc", "bin", "fleetrc");
       mkdirSync(join(launcher, ".."), { recursive: true });
       // Node.js was upgraded: the launcher still names the old node, and ssh's PATH has no node or npx.
       writeFileSync(
         launcher,
         launchers(
           join(m.root, "node-v22.1.0", "bin", "node"),
-          join(state, "skillfleet", "app", "cli.mjs"),
+          join(state, "fleetrc", "app", "cli.mjs"),
         ).sh,
       );
       chmodSync(launcher, 0o755);
@@ -229,7 +229,7 @@ describe("fleet", () => {
         env: { HOME: m.home, XDG_STATE_HOME: state, PATH: bin },
         encoding: "utf8",
       });
-      expect(run.stdout.trim(), run.stderr).toBe("skillfleet-fleet: node-gone");
+      expect(run.stdout.trim(), run.stderr).toBe("fleetrc-fleet: node-gone");
     },
   );
 
@@ -293,7 +293,7 @@ describe("fleet", () => {
       });
       // The host's sync starts and never ends.
       const pidFile = join(m.root, "sync.pid");
-      const launcher = join(m.stateDir, "bin", "skillfleet");
+      const launcher = join(m.stateDir, "bin", "fleetrc");
       mkdirSync(join(launcher, ".."), { recursive: true });
       writeFileSync(launcher, `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 300\n`);
       chmodSync(launcher, 0o755);
@@ -332,32 +332,32 @@ describe("fleet", () => {
     const m = machine();
     sshShim(m);
     const state = join(m.root, "state");
-    const dir = join(state, "skillfleet");
-    // The installed skillfleet: its version is in a file that the fake npx's self-install rewrites.
+    const dir = join(state, "fleetrc");
+    // The installed fleetrc: its version is in a file that the fake npx's self-install rewrites.
     mkdirSync(join(dir, "bin"), { recursive: true });
     writeFileSync(join(dir, "version"), "0.0.1\n");
     writeFileSync(
-      join(dir, "bin", "skillfleet"),
+      join(dir, "bin", "fleetrc"),
       `#!/bin/sh
 v=$(cat "${dir}/version")
 case "$1" in
   --version) echo "$v" ;;
-  sync) printf '{"finishedAt":"%s","ok":true,"skillfleet":"%s","skills":{"total":1}}\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$v" ;;
+  sync) printf '{"finishedAt":"%s","ok":true,"fleetrc":"%s","skills":{"total":1}}\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$v" ;;
 esac
 `,
     );
-    chmodSync(join(dir, "bin", "skillfleet"), 0o755);
+    chmodSync(join(dir, "bin", "fleetrc"), 0o755);
     const npx = join(m.root, "npx-bin");
     mkdirSync(npx);
     writeFileSync(join(npx, "npx"), `#!/bin/sh\necho 0.0.2 > "${dir}/version"\n`);
     chmodSync(join(npx, "npx"), 0o755);
     const saved = {
       XDG_STATE_HOME: process.env.XDG_STATE_HOME,
-      SKILLFLEET_SSH: process.env.SKILLFLEET_SSH,
+      FLEETRC_SSH: process.env.FLEETRC_SSH,
       PATH: process.env.PATH,
     };
     process.env.XDG_STATE_HOME = state;
-    process.env.SKILLFLEET_SSH = join(m.root, "bin", "ssh.mjs");
+    process.env.FLEETRC_SSH = join(m.root, "bin", "ssh.mjs");
     process.env.PATH = pathWith(npx, process.env);
     try {
       const results = await fleet(["localhost"], "upgrade", "0.0.2", 60_000);
@@ -547,7 +547,7 @@ describe("fleet tags", () => {
         return {
           ...result,
           code: hosts.includes(host) ? 0 : 255,
-          stdout: hosts.includes(host) ? "skillfleet-fleet: never-synced" : "",
+          stdout: hosts.includes(host) ? "fleetrc-fleet: never-synced" : "",
         };
       }
       const saturated = ++active > 12;
@@ -628,7 +628,7 @@ console.log(JSON.stringify({ finishedAt: process.env.REPORT_TIME, ok: true, skil
       ID: "server",
     };
     const tailscale = fakeTailscale(m.root, status([online]));
-    const env = { SKILLFLEET_SSH: ssh, SKILLFLEET_TAILSCALE: tailscale };
+    const env = { FLEETRC_SSH: ssh, FLEETRC_TAILSCALE: tailscale };
     const run = (host: string, time?: string) =>
       m.runWith({ env: { ...env, REPORT_TIME: time } }, "fleet", "status", host, "--json");
     const before = await run("tag:servers", "2026-01-01T00:00:00Z");
@@ -695,7 +695,7 @@ if (args.includes("-G")) {
 }
 process.exit(255);`,
     );
-    const env = { SKILLFLEET_SSH: ssh, SKILLFLEET_TAILSCALE: program };
+    const env = { FLEETRC_SSH: ssh, FLEETRC_TAILSCALE: program };
     const run = await m.runWith({ env }, "fleet", "status", "tag:servers", "--json");
     expect(run.code).toBe(1);
     const calls = readFileSync(log, "utf8")
@@ -731,7 +731,7 @@ process.exit(255);`,
     const cases: [string, string][] = [
       [
         join(m.root, "nowhere", "tailscale"),
-        "which SKILLFLEET_TAILSCALE names, is not installed or not on PATH",
+        "which FLEETRC_TAILSCALE names, is not installed or not on PATH",
       ],
       [
         fakeTailscale(join(m.root, "out"), { BackendState: "NeedsLogin" }),
@@ -762,14 +762,14 @@ process.exit(255);`,
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
     expect((await m.run("self-install")).code).toBe(0);
-    const env = { ...sshShim(m), SKILLFLEET_TAILSCALE: join(m.root, "nowhere", "tailscale") };
+    const env = { ...sshShim(m), FLEETRC_TAILSCALE: join(m.root, "nowhere", "tailscale") };
     const text = await m.runWith({ env }, "fleet", "status", "--timeout", "20");
     expect(text.code).toBe(1);
     expect(text.stderr).not.toMatch(/\n\s+at /);
     const lines = text.stdout.replace(/\r/g, "").trimEnd().split("\n");
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(
-      /^tag:servers: not expanded \(.*tailscale, which SKILLFLEET_TAILSCALE names, is not installed or not on PATH\)$/,
+      /^tag:servers: not expanded \(.*tailscale, which FLEETRC_TAILSCALE names, is not installed or not on PATH\)$/,
     );
     expect(lines[1]).toMatch(/^localhost: last run \d+s ago, 0 skills$/);
   });
@@ -786,7 +786,7 @@ process.exit(255);`,
         peer("gone.tail.ts.net", ["tag:servers"], { online: false }),
       ]),
     );
-    const env = { ...sshShim(m), SKILLFLEET_TAILSCALE: program };
+    const env = { ...sshShim(m), FLEETRC_TAILSCALE: program };
     const started = Date.now();
     const run = await m.runWith({ env }, "fleet", "status", "tag:servers", "--json");
     // The offline machine is not waited on for ssh's 30 s.
@@ -816,7 +816,7 @@ process.exit(255);`,
     const none = await m.runWith({ env }, "fleet", "status", "tag:nothing");
     expect(none.code).toBe(0);
     expect(none.stderr).toContain(
-      "skillfleet: warning: tag:nothing matches no machine on your tailnet besides this one",
+      "fleetrc: warning: tag:nothing matches no machine on your tailnet besides this one",
     );
 
     const bad = await m.runWith({ env }, "fleet", "sync", "tag:bad_tag");
@@ -837,7 +837,7 @@ process.exit(255);`,
         peer("", ["tag:servers", "tag:ip-only"], { ips: ["100.64.0.9"] }),
       ]),
     );
-    const env = { SKILLFLEET_TAILSCALE: program };
+    const env = { FLEETRC_TAILSCALE: program };
     const listed = await m.runWith({ env }, "fleet", "add");
     expect(listed.code, listed.stderr).toBe(0);
     expect(listed.stdout).toContain(
@@ -861,7 +861,7 @@ process.exit(255);`,
 
   it("an extended team manifest's tag is ignored, and Tailscale is never asked", async () => {
     const m = machine();
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
     mkdirSync(join(team, ".."), { recursive: true });
     writeFileSync(
       team,
@@ -882,7 +882,7 @@ process.exit(255);`,
     expect(loaded.warnings).toEqual([expect.stringContaining("ignored fleet; only the root")]);
     const program = fakeTailscale(m.root, status([peer("web.tail.ts.net", ["tag:servers"])]));
     const run = await m.runWith(
-      { env: { SKILLFLEET_TAILSCALE: program } },
+      { env: { FLEETRC_TAILSCALE: program } },
       "fleet",
       "status",
       "--json",
@@ -907,7 +907,7 @@ function alive(pid: number): boolean {
  * A fake `ssh` for `fleet init`: `localhost` is this machine, each name in `homes` is another
  * machine whose HOME is that folder (its XDG folders and agent folders inside it), and any other
  * host hangs. A fake `npx` on PATH appends its arguments to `<root>/npx.jsonl` and runs the built
- * CLI with the words after `-- skillfleet`, as npx runs the package it installed.
+ * CLI with the words after `-- fleetrc`, as npx runs the package it installed.
  */
 function initShims(
   m: Machine,
@@ -973,7 +973,7 @@ process.exit(process.env.FAKE_NPX_EXIT ? Number(process.env.FAKE_NPX_EXIT) : (ru
   );
   chmodSync(join(dir, "ssh"), 0o755);
   chmodSync(join(dir, "npx"), 0o755);
-  return { PATH: pathWith(dir, m.env), SKILLFLEET_PACKAGE: "/pkg/skillfleet.tgz" };
+  return { PATH: pathWith(dir, m.env), FLEETRC_PACKAGE: "/pkg/fleetrc.tgz" };
 }
 
 /** The argument lists the fake npx was run with. */
@@ -989,7 +989,7 @@ function keepFakeNpxOnRetry(m: Machine, state: string) {
   const nodeOnly = join(m.root, "node-only");
   mkdirSync(nodeOnly);
   symlinkSync(process.execPath, join(nodeOnly, "node"));
-  const launcher = join(state, "bin", "skillfleet");
+  const launcher = join(state, "bin", "fleetrc");
   writeFileSync(
     launcher,
     readFileSync(launcher, "utf8").replace(/^exec "[^"]*"/m, `exec "${join(nodeOnly, "node")}"`),
@@ -1003,9 +1003,9 @@ function keepFakeNpxOnRetry(m: Machine, state: string) {
 async function controller(fleet: string[] = [], options?: Parameters<typeof machine>[0]) {
   const m = machine(options);
   const vendor = remote(m, "vendor", skills("skills/", "fleet-skill"));
-  const manifests = remote(m, "manifests", { ".skillfleet/manifest.json": "{}" });
+  const manifests = remote(m, "manifests", { ".fleetrc/manifest.json": "{}" });
   manifests.commit({
-    ".skillfleet/manifest.json": JSON.stringify(
+    ".fleetrc/manifest.json": JSON.stringify(
       {
         agents: ["claude-code"],
         sources: [
@@ -1020,8 +1020,8 @@ async function controller(fleet: string[] = [], options?: Parameters<typeof mach
   });
   const init = await m.run("init", manifests.https, "--no-hooks");
   expect(init.code, init.stdout + init.stderr).toBe(0);
-  const spec = `${manifests.https}//.skillfleet/manifest.json`;
-  const edited = m.at("code", "manifests", ".skillfleet", "manifest.json");
+  const spec = `${manifests.https}//.fleetrc/manifest.json`;
+  const edited = m.at("code", "manifests", ".fleetrc", "manifest.json");
   const fleetIn = () => (JSON.parse(readFileSync(edited, "utf8")) as { fleet: string[] }).fleet;
   return { m, spec, fleetIn };
 }
@@ -1056,9 +1056,9 @@ describe.skipIf(isWindows)("fleet init", () => {
       [
         "-y",
         "--package",
-        "/pkg/skillfleet.tgz",
+        "/pkg/fleetrc.tgz",
         "--",
-        "skillfleet",
+        "fleetrc",
         "init",
         spec,
         "--no-hooks",
@@ -1077,17 +1077,17 @@ describe.skipIf(isWindows)("fleet init", () => {
     });
     // The host has the same manifest, its own launcher, and the skill linked.
     const config = JSON.parse(
-      readFileSync(join(m.root, "vps2", ".config", "skillfleet", "config.json"), "utf8"),
+      readFileSync(join(m.root, "vps2", ".config", "fleetrc", "config.json"), "utf8"),
     ) as { manifest: string };
     expect(config.manifest).toBe(spec);
-    expect(
-      existsSync(join(m.root, "vps2", ".local", "state", "skillfleet", "bin", "skillfleet")),
-    ).toBe(true);
+    expect(existsSync(join(m.root, "vps2", ".local", "state", "fleetrc", "bin", "fleetrc"))).toBe(
+      true,
+    );
     expect(existsSync(join(m.root, "vps2", ".claude", "skills", "fleet-skill", "SKILL.md"))).toBe(
       true,
     );
     expect(run.stderr).toContain(
-      "added vps2 to the fleet in ~/code/manifests/.skillfleet/manifest.json; commit and push it",
+      "added vps2 to the fleet in ~/code/manifests/.fleetrc/manifest.json; commit and push it",
     );
     expect(fleetIn()).toEqual(["vps2"]);
 
@@ -1103,16 +1103,16 @@ describe.skipIf(isWindows)("fleet init", () => {
   it("refuses a host that has another manifest unless --force, and says which it has", async () => {
     const { m, spec } = await controller();
     const other = join(m.root, "other");
-    mkdirSync(join(other, ".config", "skillfleet"), { recursive: true });
+    mkdirSync(join(other, ".config", "fleetrc"), { recursive: true });
     writeFileSync(
-      join(other, ".config", "skillfleet", "config.json"),
-      `\uFEFF${JSON.stringify({ manifest: "github:someone/else//.skillfleet/manifest.json" })}`,
+      join(other, ".config", "fleetrc", "config.json"),
+      `\uFEFF${JSON.stringify({ manifest: "github:someone/else//.fleetrc/manifest.json" })}`,
     );
     const env = initShims(m, { other });
     const run = await m.runWith({ env }, "fleet", "init", "other");
     expect(run.code).toBe(1);
     expect(run.stdout).toContain(
-      `other: it has the manifest github:someone/else//.skillfleet/manifest.json; pass --force to set it up with ${spec}`,
+      `other: it has the manifest github:someone/else//.fleetrc/manifest.json; pass --force to set it up with ${spec}`,
     );
     expect(npxCalls(m)).toEqual([]);
     expect(run.stdout).not.toContain("added");
@@ -1128,8 +1128,8 @@ describe.skipIf(isWindows)("fleet init", () => {
     const env = initShims(m, { same: join(m.root, "same") });
     const run = await m.runWith({ env }, "fleet", "init", "same", "--no-hooks");
     expect(run.code, run.stdout + run.stderr).toBe(0);
-    const file = join(m.root, "same", ".config", "skillfleet", "config.json");
-    const alias = spec.replace("//.skillfleet/manifest.json", "");
+    const file = join(m.root, "same", ".config", "fleetrc", "config.json");
+    const alias = spec.replace("//.fleetrc/manifest.json", "");
     writeFileSync(file, JSON.stringify({ manifest: alias }));
     const again = await m.runWith({ env }, "fleet", "init", "same");
     expect(again.code, again.stdout + again.stderr).toBe(0);
@@ -1142,17 +1142,17 @@ describe.skipIf(isWindows)("fleet init", () => {
     const m = machine();
     const home = join(m.root, "box");
     const env = initShims(m, { box: home });
-    const alias = "me/skills//.skillfleet/manifest.json";
+    const alias = "me/skills//.fleetrc/manifest.json";
     const spec = `github:${alias}`;
-    const config = join(home, ".config", "skillfleet");
-    const bin = join(home, ".local", "state", "skillfleet", "bin");
+    const config = join(home, ".config", "fleetrc");
+    const bin = join(home, ".local", "state", "fleetrc", "bin");
     mkdirSync(config, { recursive: true });
     mkdirSync(bin, { recursive: true });
     const contents = JSON.stringify({ manifest: alias });
     writeFileSync(join(config, "config.json"), contents);
-    mkdirSync(join(home, "me", "skills", ".skillfleet"), { recursive: true });
+    mkdirSync(join(home, "me", "skills", ".fleetrc"), { recursive: true });
     writeFileSync(join(home, alias), "{}");
-    const launcher = join(bin, "skillfleet");
+    const launcher = join(bin, "fleetrc");
     writeFileSync(launcher, `#!/bin/sh\ntouch "${m.root}/synced"\n`, { mode: 0o755 });
     const savedPath = process.env.PATH;
     process.env.PATH = env.PATH;
@@ -1180,7 +1180,7 @@ describe.skipIf(isWindows)("fleet init", () => {
     const failed = await m.runWith({ env }, "fleet", "init", "vps2");
     expect(failed.code, failed.stdout + failed.stderr).toBe(1);
     expect(fleetIn()).toEqual([]);
-    const launcher = join(home, ".local", "state", "skillfleet", "bin", "skillfleet");
+    const launcher = join(home, ".local", "state", "fleetrc", "bin", "fleetrc");
     const nodeOnly = join(m.root, "node-only");
     mkdirSync(nodeOnly);
     symlinkSync(process.execPath, join(nodeOnly, "node"));
@@ -1199,7 +1199,7 @@ describe.skipIf(isWindows)("fleet init", () => {
 
   it("returns one JSON document if enrollment fails after setup", async () => {
     const { m } = await controller();
-    writeFileSync(m.at("code", "manifests", ".skillfleet", "manifest.json"), "{ invalid JSON");
+    writeFileSync(m.at("code", "manifests", ".fleetrc", "manifest.json"), "{ invalid JSON");
     const env = initShims(m, { vps2: join(m.root, "vps2") });
     const run = await m.runWith({ env }, "fleet", "init", "vps2", "--json", "--no-hooks");
     expect(run.code, run.stdout + run.stderr).toBe(1);
@@ -1258,7 +1258,7 @@ wait
     );
     const env = {
       ...initShims(m, { [host]: join(m.root, "vps2") }),
-      SKILLFLEET_TAILSCALE: program,
+      FLEETRC_TAILSCALE: program,
     };
     const run = await m.runWith(
       { env },
@@ -1281,10 +1281,10 @@ wait
     expect(run.code, run.stdout + run.stderr).toBe(0);
     // The host's config omits the default file, which is still this manifest, and its
     // launcher is gone, so it is set up again (with the fake npx: the launcher's node has a real one).
-    const file = join(m.root, "same", ".config", "skillfleet", "config.json");
-    const alias = spec.replace("//.skillfleet/manifest.json", "");
+    const file = join(m.root, "same", ".config", "fleetrc", "config.json");
+    const alias = spec.replace("//.fleetrc/manifest.json", "");
     writeFileSync(file, JSON.stringify({ manifest: alias }));
-    rmSync(join(m.root, "same", ".local", "state", "skillfleet", "bin"), { recursive: true });
+    rmSync(join(m.root, "same", ".local", "state", "fleetrc", "bin"), { recursive: true });
     const again = await m.runWith({ env }, "fleet", "init", "same", "--no-hooks");
     expect(again.code, again.stdout + again.stderr).toBe(0);
     expect(again.stdout).toMatch(/^same: set up; last run /m);
@@ -1300,7 +1300,7 @@ wait
     expect(npxCalls(m)).toHaveLength(1);
     const [host] = JSON.parse(run.stdout) as { host: string; setup?: string; error?: string }[];
     expect(host!.setup).toBeUndefined();
-    expect(host!.error).toMatch(/^skillfleet init exited 1.*, so the host is not set up$/);
+    expect(host!.error).toMatch(/^fleetrc init exited 1.*, so the host is not set up$/);
     expect(run.stderr).not.toContain("added vps2");
     expect(fleetIn()).toEqual([]);
   });
@@ -1314,7 +1314,7 @@ wait
     const nodeOnly = join(m.root, "node-only");
     mkdirSync(nodeOnly);
     symlinkSync(process.execPath, join(nodeOnly, "node"));
-    const launcher = join(m.root, "vps2", ".local", "state", "skillfleet", "bin", "skillfleet");
+    const launcher = join(m.root, "vps2", ".local", "state", "fleetrc", "bin", "fleetrc");
     writeFileSync(
       launcher,
       readFileSync(launcher, "utf8").replace(/^exec "[^"]*"/m, `exec "${join(nodeOnly, "node")}"`),
@@ -1328,7 +1328,7 @@ wait
     expect(npxCalls(m)).toHaveLength(2);
     expect(npxCalls(m)[1]).toEqual(expect.arrayContaining(["--copy", "--no-hooks"]));
     const config = JSON.parse(
-      readFileSync(join(m.root, "vps2", ".config", "skillfleet", "config.json"), "utf8"),
+      readFileSync(join(m.root, "vps2", ".config", "fleetrc", "config.json"), "utf8"),
     ) as { copy?: boolean };
     expect(config.copy).toBe(true);
   });
@@ -1355,7 +1355,7 @@ wait
         error: expect.stringContaining("this machine has no systemd user manager"),
       });
       expect.soft(host).not.toHaveProperty("setup");
-      keepFakeNpxOnRetry(m, join(m.root, "vps2", ".local", "state", "skillfleet"));
+      keepFakeNpxOnRetry(m, join(m.root, "vps2", ".local", "state", "fleetrc"));
       const retry = await m.runWith({ env }, "fleet", "init", "vps2", "--json");
       expect.soft(retry.code, retry.stdout + retry.stderr).toBe(1);
       expect.soft(JSON.parse(retry.stdout)).toEqual([
@@ -1378,7 +1378,7 @@ wait
     const calls = m.schedulerCalls().length;
     expect(calls).toBeGreaterThan(0);
 
-    const state = join(host, ".local", "state", "skillfleet");
+    const state = join(host, ".local", "state", "fleetrc");
     keepFakeNpxOnRetry(m, state);
     const retry = await m.runWith({ env }, "fleet", "init", "vps2");
     expect(retry.code, retry.stdout + retry.stderr).toBe(1);
@@ -1395,11 +1395,7 @@ wait
     expect((await m.run("init", manifest, "--timer", "--no-hooks")).code).toBe(1);
     expect(readFileSync(pending, "utf8")).toBe("timer\n");
 
-    const remove = await m.runWith(
-      { env: { SKILLFLEET_TEST_SCHEDULER: "empty" } },
-      "timer",
-      "remove",
-    );
+    const remove = await m.runWith({ env: { FLEETRC_TEST_SCHEDULER: "empty" } }, "timer", "remove");
     expect(remove.code, remove.stdout + remove.stderr).toBe(0);
     expect(readFileSync(pending, "utf8")).toBe("");
     const calls = m.schedulerCalls().length;
@@ -1413,7 +1409,7 @@ wait
     const { m } = await controller(["VPS2", "tag:servers"]);
     const env = {
       ...initShims(m, {}, { VPS2: "vps2" }),
-      SKILLFLEET_TAILSCALE: fakeTailscale(
+      FLEETRC_TAILSCALE: fakeTailscale(
         m.root,
         status([peer("web.invalid", ["tag:servers"], { ips: ["fd7a::5"] })]),
       ),
@@ -1440,7 +1436,7 @@ wait
         { "build.": join(m.root, "named"), "web.": join(m.root, "tagged") },
         { build: "build-one.invalid", "build.": "build-two.invalid", "web.": "web-two.invalid" },
       ),
-      SKILLFLEET_TAILSCALE: fakeTailscale(m.root, status([peer("web", ["tag:servers"])])),
+      FLEETRC_TAILSCALE: fakeTailscale(m.root, status([peer("web", ["tag:servers"])])),
     };
     const plan = await m.runWith(
       { env },
@@ -1471,7 +1467,7 @@ wait
     const broken = peer("???", ["tag:broken"], { ips: [] });
     const env = {
       ...initShims(m, { "web.invalid": join(m.root, "web") }, { "web.invalid": "100.64.0.5" }),
-      SKILLFLEET_TAILSCALE: fakeTailscale(m.root, status([active, offline, broken])),
+      FLEETRC_TAILSCALE: fakeTailscale(m.root, status([active, offline, broken])),
     };
     const preview = await m.runWith(
       { env },
@@ -1513,7 +1509,7 @@ wait
     const host = "web.invalid";
     const env = {
       ...initShims(m, { [host]: join(m.root, "alias") }, { [host]: "100.64.0.6" }),
-      SKILLFLEET_TAILSCALE: fakeTailscale(
+      FLEETRC_TAILSCALE: fakeTailscale(
         m.root,
         status([peer(host, ["tag:servers"], { ips: ["100.64.0.5"], online: false })]),
       ),
@@ -1550,8 +1546,8 @@ if (process.argv.includes("-G")) {
   process.exit(0);
 }
 if (process.env.FAKE_ANSWER === "mismatch") {
-  console.error("skillfleet-fleet: has github:another/manifest");
-  console.log("skillfleet-fleet: other-manifest");
+  console.error("fleetrc-fleet: has github:another/manifest");
+  console.log("fleetrc-fleet: other-manifest");
 } else if (process.env.FAKE_ANSWER === "failed") {
   console.log(JSON.stringify({ sync: { ...success, finishedAt: "2026-01-01T00:01:00Z", ok: false } }));
   process.exitCode = 1;
@@ -1562,9 +1558,9 @@ if (process.env.FAKE_ANSWER === "mismatch") {
       m.runWith(
         {
           env: {
-            SKILLFLEET_SSH: ssh,
-            SKILLFLEET_TAILSCALE: tailscale,
-            SKILLFLEET_PACKAGE: "/pkg/skillfleet.tgz",
+            FLEETRC_SSH: ssh,
+            FLEETRC_TAILSCALE: tailscale,
+            FLEETRC_PACKAGE: "/pkg/fleetrc.tgz",
             FAKE_ANSWER: answer,
           },
         },
@@ -1602,7 +1598,7 @@ if (process.env.FAKE_ANSWER === "mismatch") {
       m.root,
       status([peer("web.invalid", ["tag:servers"], { ips: [ip] })]),
     );
-    const env = { ...initShims(m, {}, { localhost: ip }), SKILLFLEET_TAILSCALE: program };
+    const env = { ...initShims(m, {}, { localhost: ip }), FLEETRC_TAILSCALE: program };
     const run = await m.runWith({ env }, "fleet", "init", "localhost", "--json");
     expect(run.code, run.stdout + run.stderr).toBe(0);
     expect(JSON.parse(run.stdout)).toEqual([
@@ -1622,7 +1618,7 @@ if (process.env.FAKE_ANSWER === "mismatch") {
     });
     const env = {
       ...initShims(m, { [ipv6]: join(m.root, "web") }),
-      SKILLFLEET_TAILSCALE: tailscale,
+      FLEETRC_TAILSCALE: tailscale,
     };
     const run = await m.runWith({ env }, "fleet", "init", ipv6, "--no-hooks", "--json");
     expect(run.code, run.stdout + run.stderr).toBe(0);
@@ -1637,14 +1633,14 @@ if (process.env.FAKE_ANSWER === "mismatch") {
     const run = await m.runWith({ env }, "fleet", "init", "vps2", "laptop", "--timer", "--dry-run");
     expect(run.code, run.stderr).toBe(0);
     expect(run.stdout).toContain(
-      `vps2: would run npx -y --package /pkg/skillfleet.tgz -- skillfleet init ${spec} --timer --json\n`,
+      `vps2: would run npx -y --package /pkg/fleetrc.tgz -- fleetrc init ${spec} --timer --json\n`,
     );
     expect(run.stdout).toContain(
-      "would add vps2 to the fleet in ~/code/manifests/.skillfleet/manifest.json",
+      "would add vps2 to the fleet in ~/code/manifests/.fleetrc/manifest.json",
     );
     const json = await m.runWith({ env }, "fleet", "init", "vps2", "--dry-run", "--json");
     expect(JSON.parse(json.stdout)).toEqual([
-      { host: "vps2", command: expect.stringContaining(`skillfleet init ${spec} --json`) },
+      { host: "vps2", command: expect.stringContaining(`fleetrc init ${spec} --json`) },
     ]);
     expect(npxCalls(m)).toEqual([]);
     expect(existsSync(join(m.root, "vps2", ".config"))).toBe(false);
@@ -1659,18 +1655,18 @@ if (process.env.FAKE_ANSWER === "mismatch") {
     const run = await m.runWith({ env }, "fleet", "init", "vps2");
     expect(run.code).toBe(1);
     expect(run.stderr.trim()).toBe(
-      `skillfleet: the manifest is ${manifest}, on this machine, which other machines can't read; push it to a repository and run \`skillfleet init <repository>\` with that`,
+      `fleetrc: the manifest is ${manifest}, on this machine, which other machines can't read; push it to a repository and run \`fleetrc init <repository>\` with that`,
     );
     expect(npxCalls(m)).toEqual([]);
   });
 
-  it("refuses a development build without SKILLFLEET_PACKAGE, as fleet upgrade does", async () => {
+  it("refuses a development build without FLEETRC_PACKAGE, as fleet upgrade does", async () => {
     const { m } = await controller();
     const { PATH } = initShims(m, { vps2: join(m.root, "vps2") });
     const run = await m.runWith({ env: { PATH } }, "fleet", "init", "vps2");
     expect(run.code).toBe(1);
-    expect(run.stderr).toContain("this skillfleet is a development or preview build (0.0.0)");
-    expect(run.stderr).toContain("SKILLFLEET_PACKAGE");
+    expect(run.stderr).toContain("this fleetrc is a development or preview build (0.0.0)");
+    expect(run.stderr).toContain("FLEETRC_PACKAGE");
     expect(npxCalls(m)).toEqual([]);
   });
 
@@ -1680,14 +1676,14 @@ if (process.env.FAKE_ANSWER === "mismatch") {
     const spec = `https://h.example/a'$(touch ${m.root}/P)\`touch ${m.root}/Q\`"; touch ${m.root}/R; '.git//m.json`;
     const setup: InitSetup = { spec, flags: ["--timer"], force: false, same: () => false };
     const saved = {
-      SKILLFLEET_SSH: process.env.SKILLFLEET_SSH,
+      FLEETRC_SSH: process.env.FLEETRC_SSH,
       PATH: process.env.PATH,
       XDG_STATE_HOME: process.env.XDG_STATE_HOME,
       FAKE_NPX_RECORD_ONLY: process.env.FAKE_NPX_RECORD_ONLY,
     };
     process.env.XDG_STATE_HOME = join(m.root, "state");
     process.env.FAKE_NPX_RECORD_ONLY = "1";
-    process.env.SKILLFLEET_SSH = join(m.root, "bin", "ssh.mjs");
+    process.env.FLEETRC_SSH = join(m.root, "bin", "ssh.mjs");
     process.env.PATH = pathWith(join(m.root, "bin"), process.env);
     try {
       await fleet(["box"], "init", "1.2.3", 30_000, { setup });
@@ -1697,27 +1693,17 @@ if (process.env.FAKE_ANSWER === "mismatch") {
         else process.env[key] = value;
     }
     expect(npxCalls(m)).toEqual([
-      [
-        "-y",
-        "--package",
-        "skillfleet@1.2.3",
-        "--",
-        "skillfleet",
-        "init",
-        spec,
-        "--timer",
-        "--json",
-      ],
+      ["-y", "--package", "fleetrc@1.2.3", "--", "fleetrc", "init", spec, "--timer", "--json"],
     ]);
     for (const file of ["P", "Q", "R"]) expect(existsSync(join(m.root, file))).toBe(false);
   });
 
   it("sends the host a spec that no folder there can stand for, and runs its init from /", () => {
-    expect(hostManifestSpec("me/skills//.skillfleet/manifest.json")).toBe(
-      "github:me/skills//.skillfleet/manifest.json",
+    expect(hostManifestSpec("me/skills//.fleetrc/manifest.json")).toBe(
+      "github:me/skills//.fleetrc/manifest.json",
     );
     expect(hostManifestSpec("me/skills//teams/web.json")).toBe("github:me/skills//teams/web.json");
-    expect(hostManifestSpec("me/skills")).toBe("github:me/skills//.skillfleet/manifest.json");
+    expect(hostManifestSpec("me/skills")).toBe("github:me/skills//.fleetrc/manifest.json");
     for (const kept of [
       // A link that pins a branch is the one form that keeps it.
       "https://github.com/me/skills/blob/dev/teams/web.json",
@@ -1764,7 +1750,7 @@ if (process.env.FAKE_ANSWER === "mismatch") {
     ["owner/repo.tgz", false],
     ["@scope/name.tgz", false],
   ])(
-    "passes SKILLFLEET_PACKAGE %s without changing its meaning from the login folder",
+    "passes FLEETRC_PACKAGE %s without changing its meaning from the login folder",
     (pkg, relative) => {
       const m = machine();
       const bin = join(m.root, "npx-bin");
@@ -1772,8 +1758,8 @@ if (process.env.FAKE_ANSWER === "mismatch") {
       symlinkSync(process.execPath, join(bin, "node"));
       writeFileSync(join(bin, "npx"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${m.root}/npx-ran"\n`);
       chmodSync(join(bin, "npx"), 0o755);
-      const before = process.env.SKILLFLEET_PACKAGE;
-      process.env.SKILLFLEET_PACKAGE = pkg;
+      const before = process.env.FLEETRC_PACKAGE;
+      process.env.FLEETRC_PACKAGE = pkg;
       try {
         const script = remoteScript("init", "1.2.3", {
           setup: { spec: "github:me/skills", flags: [], force: false, same: () => false },
@@ -1784,8 +1770,8 @@ if (process.env.FAKE_ANSWER === "mismatch") {
           input: "",
         });
       } finally {
-        if (before === undefined) delete process.env.SKILLFLEET_PACKAGE;
-        else process.env.SKILLFLEET_PACKAGE = before;
+        if (before === undefined) delete process.env.FLEETRC_PACKAGE;
+        else process.env.FLEETRC_PACKAGE = before;
       }
       const args = readFileSync(join(m.root, "npx-ran"), "utf8").trim().split("\n");
       expect(args[2]).toBe(relative ? `${realpathSync(m.home)}/${pkg}` : pkg);
@@ -1793,7 +1779,7 @@ if (process.env.FAKE_ANSWER === "mismatch") {
   );
 
   it("takes two manifest specs as the same only when their repository surely is", () => {
-    const file = "//.skillfleet/manifest.json";
+    const file = "//.fleetrc/manifest.json";
     for (const [a, b] of [
       ["me/skills", `github:me/skills${file}`],
       [`me/skills${file}`, `https://github.com/me/skills.git${file}`],
@@ -1842,7 +1828,7 @@ if (process.env.FAKE_ANSWER === "mismatch") {
           "-c",
           remoteScript("init", "1.2.3", {
             setup: {
-              spec: "me/skills//.skillfleet/manifest.json",
+              spec: "me/skills//.fleetrc/manifest.json",
               flags: [],
               force: false,
               same: () => false,
@@ -1851,9 +1837,9 @@ if (process.env.FAKE_ANSWER === "mismatch") {
         ],
         { env: { HOME: m.home, PATH: path }, encoding: "utf8" },
       ).stdout.trim();
-    expect(run(bin)).toBe("skillfleet-fleet: init-no-node");
+    expect(run(bin)).toBe("fleetrc-fleet: init-no-node");
     symlinkSync(process.execPath, join(bin, "node"));
-    expect(run(bin)).toBe("skillfleet-fleet: no-npx");
+    expect(run(bin)).toBe("fleetrc-fleet: no-npx");
   });
 });
 
@@ -1872,7 +1858,7 @@ describe("markBehind", () => {
     lastRun: {
       finishedAt,
       ok: true,
-      skillfleet: "0.0.1",
+      fleetrc: "0.0.1",
       host: name,
       skills: 1,
       held,

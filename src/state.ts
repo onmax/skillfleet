@@ -5,7 +5,7 @@ import { isVendoredKind, type Source } from "./manifest.ts";
 import { paths, tildify } from "./paths.ts";
 import { skillRecord, type SkillRecord } from "./skill-record.ts";
 
-/** A vendored skill as skillfleet last installed it: the merge base for local edits. */
+/** A vendored skill as fleetrc last installed it: the merge base for local edits. */
 export interface InstalledCopy {
   hashes: Hashes;
   /** Folder of the skill inside its source, when the source has a tree. */
@@ -14,7 +14,7 @@ export interface InstalledCopy {
 }
 
 export interface PendingUpdate {
-  /** `review`: the source waits for `skillfleet update`; `edited`: the local copy has edits. */
+  /** `review`: the source waits for `fleetrc update`; `edited`: the local copy has edits. */
   reason: "review" | "edited";
   since: string;
   path?: string;
@@ -106,8 +106,8 @@ export function loadState(warnings?: string[]): State {
     if (warnings)
       backUp(
         isRecord(raw) && typeof raw.version === "number" && raw.version !== 1
-          ? `is version ${raw.version}, from another skillfleet,`
-          : "has a shape skillfleet does not know,",
+          ? `is version ${raw.version}, from another fleetrc,`
+          : "has a shape fleetrc does not know,",
         warnings,
       );
     return emptyState();
@@ -234,7 +234,7 @@ function backUp(problem: string, warnings: string[]) {
     if (!(mode & 0o200)) chmodSync(from, mode | 0o200);
   }
   warnings.push(
-    `${tildify(from)} ${problem} so skillfleet started a new one and kept the old one at ${tildify(to)}`,
+    `${tildify(from)} ${problem} so fleetrc started a new one and kept the old one at ${tildify(to)}`,
   );
 }
 

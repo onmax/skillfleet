@@ -183,7 +183,7 @@ export async function git(
 ): Promise<ExecResult> {
   const env: NodeJS.ProcessEnv = { ...process.env, ...GIT_ENV };
   for (const key of Object.keys(env)) if (key.toUpperCase() === "GIT_CONFIG") delete env[key];
-  // Git for Windows writes no path past 260 characters without core.longpaths, and skillfleet's
+  // Git for Windows writes no path past 260 characters without core.longpaths, and fleetrc's
   // cache sits deep under HOME. Other systems ignore it.
   // A remote that stops sending: under 1 KB/s for a minute ends the transfer, over http(s). Other
   // transports, such as ssh, end at the timeout.

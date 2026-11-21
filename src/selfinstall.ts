@@ -22,9 +22,9 @@ import { hashDir, isErrno, lstat, sameTree, sha256 } from "./fs.ts";
 import { removeLink } from "./linker.ts";
 import { paths, tildify, xdgDir } from "./paths.ts";
 
-/** The launcher the timer and `fleet` run: an absolute node path and skillfleet's own copy. */
+/** The launcher the timer and `fleet` run: an absolute node path and fleetrc's own copy. */
 export const launcherPath = () =>
-  join(paths.bin(), process.platform === "win32" ? "skillfleet.cmd" : "skillfleet");
+  join(paths.bin(), process.platform === "win32" ? "fleetrc.cmd" : "fleetrc");
 export const installedCli = () => join(paths.app(), "cli.mjs");
 
 /** The build `installedCli` loads, or undefined when it is not a file `selfInstall` wrote. */
@@ -55,8 +55,8 @@ export const NODE_LINK = "node-dir";
  * finds the copy next to itself through `%~dp0`, so the state folder's path (the user's name, in
  * the code page cmd reads the file in) is never written into it; `%` in node's path is doubled,
  * since cmd expands it even inside quotes. Started by a quoted name it found on PATH
- * (`"skillfleet" sync`), cmd gives `%~dp0` the current folder, so it then finds itself on PATH.
- * The .ps1 one is what PowerShell runs for `skillfleet`: it passes arguments to node as typed,
+ * (`"fleetrc" sync`), cmd gives `%~dp0` the current folder, so it then finds itself on PATH.
+ * The .ps1 one is what PowerShell runs for `fleetrc`: it passes arguments to node as typed,
  * where through the .cmd, cmd would act on `&`, `|`, `^` and `%` in them first. It is UTF-8 with a
  * byte order mark, which Windows PowerShell needs to read it as UTF-8.
  */
@@ -82,7 +82,7 @@ export function launchers(
       "",
     ].join("\r\n"),
     ps1: `\uFEFF${[
-      "# skillfleet's launcher for PowerShell: arguments reach node as typed. It calls no cmdlet, which",
+      "# fleetrc's launcher for PowerShell: arguments reach node as typed. It calls no cmdlet, which",
       "# Windows PowerShell would first look for in every module, for seconds under a new profile.",
       '$cli = "$PSScriptRoot\\..\\app\\cli.mjs"',
       `if ($MyInvocation.ExpectingInput) { $input | & ${psNode} $cli $args } else { & ${psNode} $cli $args }`,
@@ -171,7 +171,7 @@ export function findOnPath(command: string): string | undefined {
 
 /**
  * Environment of scheduled runs: PATH with node's folder and git's ahead of the user's own lasting
- * folders, and every variable skillfleet reads to find its config, state and the agents' folders,
+ * folders, and every variable fleetrc reads to find its config, state and the agents' folders,
  * so the timer works on the same folders as the shell that installed it. Installing from npx and
  * from the launcher gives the same environment, so switching between them leaves the timer alone.
  */
@@ -200,7 +200,7 @@ export function timerEnv(git: string | undefined, node: string): Record<string, 
   return env;
 }
 
-/** The Node.js that skillfleet needs: `engines` in package.json and src/entry.ts. */
+/** The Node.js that fleetrc needs: `engines` in package.json and src/entry.ts. */
 const NODE_MIN = [22, 12] as const;
 
 /**
@@ -219,7 +219,7 @@ function shims(home: string, env: NodeJS.ProcessEnv): { installs: string; shim: 
   ];
 }
 
-/** Whether `node`, run from HOME as the timer runs it, is a Node.js skillfleet can run on. */
+/** Whether `node`, run from HOME as the timer runs it, is a Node.js fleetrc can run on. */
 function runsSupportedNode(node: string, home: string): boolean {
   const run = spawnSync(node, ["-p", "process.versions.node"], {
     cwd: home,
@@ -315,7 +315,7 @@ export function selfInstall(): { cli: string; launcher: string; node: string; no
     renameSync(temp, build);
   }
   const entry = installedCli();
-  const stub = `// skillfleet's installed build; \`skillfleet self-install\` points this at a new one.\nimport "./${id}/cli.mjs";\n`;
+  const stub = `// fleetrc's installed build; \`fleetrc self-install\` points this at a new one.\nimport "./${id}/cli.mjs";\n`;
   let current: string | undefined;
   try {
     current = readFileSync(entry, "utf8");
@@ -351,17 +351,17 @@ export function selfInstall(): { cli: string; launcher: string; node: string; no
     }
   }
   const text = launchers(node, cli, { nodeLink });
-  const sh = join(bin, "skillfleet");
+  const sh = join(bin, "fleetrc");
   writeFileSync(sh, text.sh);
   chmodSync(sh, 0o755);
   if (process.platform === "win32") {
-    writeFileSync(join(bin, "skillfleet.cmd"), text.cmd);
-    const ps1 = join(bin, "skillfleet.ps1");
+    writeFileSync(join(bin, "fleetrc.cmd"), text.cmd);
+    const ps1 = join(bin, "fleetrc.ps1");
     const blocked = scriptsBlocked();
     if (blocked) {
       rmSync(ps1, { force: true });
       notes.push(
-        `PowerShell's execution policy is ${blocked}, so \`skillfleet\` in PowerShell runs the .cmd launcher, where cmd acts on & | ^ % in arguments; to pass them as typed, run \`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned\`, then \`skillfleet self-install\``,
+        `PowerShell's execution policy is ${blocked}, so \`fleetrc\` in PowerShell runs the .cmd launcher, where cmd acts on & | ^ % in arguments; to pass them as typed, run \`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned\`, then \`fleetrc self-install\``,
       );
     } else writeFileSync(ps1, text.ps1);
   }
@@ -430,7 +430,7 @@ function retireBuilds(app: string, keep: string) {
 /**
  * The execution policy that keeps PowerShell from running a local script (Restricted or
  * AllSigned), in Windows PowerShell or PowerShell 7, or undefined when both run one. PowerShell
- * prefers skillfleet.ps1 to skillfleet.cmd, and with such a policy it fails instead of falling back,
+ * prefers fleetrc.ps1 to fleetrc.cmd, and with such a policy it fails instead of falling back,
  * so the .ps1 is written only when every PowerShell here runs it. The policy a parent PowerShell
  * set for its own process (`-ExecutionPolicy Bypass`) is not what a new shell gets, so it is left out.
  */
@@ -473,9 +473,9 @@ const isExecutable = (file: string) => {
 };
 
 /**
- * Makes `skillfleet` a command in new shells, and says how. A `skillfleet` already on PATH, such
+ * Makes `fleetrc` a command in new shells, and says how. A `fleetrc` already on PATH, such
  * as a global npm install, is left alone. Otherwise, when `~/.local/bin` is on PATH (Linux, and
- * macOS when the user put it there), `~/.local/bin/skillfleet` links to the launcher; failing
+ * macOS when the user put it there), `~/.local/bin/fleetrc` links to the launcher; failing
  * that, the message says which folder to add to PATH. npx and `pnpm dlx` put their own temporary
  * `node_modules/.bin` on PATH, which a new shell does not have, so those folders do not count.
  */
@@ -484,18 +484,17 @@ export function commandOnPath(launcher = launcherPath()): string {
   const dirs = (process.env.PATH ?? "")
     .split(delimiter)
     .filter((dir) => dir && !resolve(dir).endsWith(`${sep}node_modules${sep}.bin`));
-  const names =
-    process.platform === "win32" ? ["skillfleet.cmd", "skillfleet.exe"] : ["skillfleet"];
+  const names = process.platform === "win32" ? ["fleetrc.cmd", "fleetrc.exe"] : ["fleetrc"];
   const found = dirs
     .flatMap((dir) => names.map((name) => join(dir, name)))
     .find((file) => lstat(file) && isExecutable(file));
   if (found)
     return realpathSync(found) === realpathSync(launcher)
-      ? `\`skillfleet\` runs ${tildify(launcher)}${found === launcher ? "" : `, through ${tildify(found)}`}`
-      : `\`skillfleet\` runs ${tildify(found)}, which is on PATH; the timer runs ${tildify(launcher)}`;
+      ? `\`fleetrc\` runs ${tildify(launcher)}${found === launcher ? "" : `, through ${tildify(found)}`}`
+      : `\`fleetrc\` runs ${tildify(found)}, which is on PATH; the timer runs ${tildify(launcher)}`;
   if (process.platform !== "win32") {
     const local = join(homedir(), ".local", "bin");
-    const link = join(local, "skillfleet");
+    const link = join(local, "fleetrc");
     if (dirs.some((dir) => resolve(dir) === local)) {
       const existing = lstat(link);
       if (!existing) {
@@ -503,11 +502,11 @@ export function commandOnPath(launcher = launcherPath()): string {
         symlinkSync(launcher, link);
       }
       if (!existing || (existing.isSymbolicLink() && readlinkSync(link) === launcher))
-        return `\`skillfleet\` runs ${tildify(launcher)}, through ${tildify(link)}`;
+        return `\`fleetrc\` runs ${tildify(launcher)}, through ${tildify(link)}`;
     }
     return pathAdvice(bin);
   }
-  return `to run \`skillfleet\` from a new shell, add ${bin} to your user PATH, for example in PowerShell: [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";${bin}", "User")`;
+  return `to run \`fleetrc\` from a new shell, add ${bin} to your user PATH, for example in PowerShell: [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";${bin}", "User")`;
 }
 
 /**
@@ -521,7 +520,7 @@ export function pathAdvice(
   platform: NodeJS.Platform = process.platform,
 ): string {
   const quoted = `'${bin.replace(/'/g, `'\\''`)}'`;
-  const lead = `to run \`skillfleet\` from a new shell, add ${tildify(bin)} to PATH`;
+  const lead = `to run \`fleetrc\` from a new shell, add ${tildify(bin)} to PATH`;
   const name = basename(shell);
   if (name === "fish") return `${lead}: fish_add_path ${quoted}`;
   // csh and tcsh keep PATH in the list $path; tcsh reads ~/.tcshrc before ~/.cshrc.

@@ -32,7 +32,13 @@ import {
 import { nameKey, segmentProblem } from "./names.ts";
 import { tildify } from "./paths.ts";
 
-export const MANIFEST_FILE = ".skillfleet-manifest.json";
+export const MANIFEST_FILE = ".fleetrc-manifest.json";
+
+/** A record read where `MANIFEST_FILE` is missing: the old name's, in a dry run of the move (migrate.ts). */
+let fallbackRecord: string | undefined;
+export const readRecordsFrom = (name: string) => {
+  fallbackRecord = name;
+};
 
 export type LinkKind = "symlink" | "junction" | "copy";
 
@@ -64,10 +70,10 @@ export interface TargetReport {
   created: string[];
   replaced: string[];
   removed: string[];
-  /** Hand-made folders and links skillfleet did not create, left as they are. */
+  /** Hand-made folders and links fleetrc did not create, left as they are. */
   foreign: string[];
   skipped?: string;
-  /** A folder skillfleet linked into before and no longer does: only its old links are removed. */
+  /** A folder fleetrc linked into before and no longer does: only its old links are removed. */
   former?: boolean;
   warnings: string[];
   /** Links that could not be made, changed or removed, and folders that could not be written. */
@@ -75,18 +81,24 @@ export interface TargetReport {
 }
 
 /**
- * The links skillfleet made in `dir`. A record that does not parse reads as empty, with a
+ * The links fleetrc made in `dir`. A record that does not parse reads as empty, with a
  * warning: links it can't prove it made are then never pruned, only re-recorded when they point
- * where skillfleet would link anyway.
+ * where fleetrc would link anyway.
  */
 export function readTargetManifest(dir: string, warnings: string[] = []): TargetManifest {
   let raw: unknown;
+  const file =
+    fallbackRecord !== undefined &&
+    !existsSync(join(dir, MANIFEST_FILE)) &&
+    existsSync(join(dir, fallbackRecord))
+      ? join(dir, fallbackRecord)
+      : join(dir, MANIFEST_FILE);
   try {
-    raw = readJson(join(dir, MANIFEST_FILE));
+    raw = readJson(file);
   } catch (error) {
     if (!(error instanceof JsonFileError)) throw error;
     warnings.push(
-      `${tildify(join(dir, MANIFEST_FILE))} is not valid JSON, so skillfleet started a new one; links it no longer knows it made stay where they are`,
+      `${tildify(join(dir, MANIFEST_FILE))} is not valid JSON, so fleetrc started a new one; links it no longer knows it made stay where they are`,
     );
     return { version: 1, links: dict() };
   }
@@ -197,7 +209,7 @@ export function linkTargetDir(
   };
   const stat = lstat(dir);
   if (stat?.isSymbolicLink()) {
-    report.skipped = `${tildify(dir)} is a link to ${tildify(linkTarget(dir))}; run \`skillfleet init\` to give it one link per skill`;
+    report.skipped = `${tildify(dir)} is a link to ${tildify(linkTarget(dir))}; run \`fleetrc init\` to give it one link per skill`;
     return report;
   }
   if (stat && !stat.isDirectory()) {
@@ -297,7 +309,7 @@ export function linkTargetDir(
       else {
         report.foreign.push(link.name);
         report.warnings.push(
-          `${tildify(listedPath(dir, link.name))} links to ${tildify(pointsTo)}, not ${tildify(link.target)}; skillfleet did not make it, so it stays${sameFolderNote(dir, link.name)}`,
+          `${tildify(listedPath(dir, link.name))} links to ${tildify(pointsTo)}, not ${tildify(link.target)}; fleetrc did not make it, so it stays${sameFolderNote(dir, link.name)}`,
         );
       }
       return;
@@ -322,7 +334,7 @@ export function linkTargetDir(
     }
     report.foreign.push(link.name);
     report.warnings.push(
-      `${tildify(listedPath(dir, link.name))} is a ${current.isDirectory() ? "folder" : "file"} skillfleet did not make, so it stays${sameFolderNote(dir, link.name)}`,
+      `${tildify(listedPath(dir, link.name))} is a ${current.isDirectory() ? "folder" : "file"} fleetrc did not make, so it stays${sameFolderNote(dir, link.name)}`,
     );
   }
 
@@ -344,7 +356,7 @@ export function linkTargetDir(
         report.removed.push(name);
       } else if (current) {
         report.warnings.push(
-          `${tildify(path)} changed since skillfleet made it, so it is not removed`,
+          `${tildify(path)} changed since fleetrc made it, so it is not removed`,
         );
       }
       if (!dryRun) delete manifest.links[name];

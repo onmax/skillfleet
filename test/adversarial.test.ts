@@ -1,4 +1,4 @@
-// Hostile and unlucky inputs. Each test asserts what skillfleet should do; a failing test is a
+// Hostile and unlucky inputs. Each test asserts what fleetrc should do; a failing test is a
 // break the fix wave has to close. Every run uses the fixture's temporary HOME.
 import {
   chmodSync,
@@ -57,7 +57,7 @@ function tree(dir: string): string[] {
   return out.sort();
 }
 
-/** A link to a folder that, like skillfleet's own on Windows, needs no symlink privilege there. */
+/** A link to a folder that, like fleetrc's own on Windows, needs no symlink privilege there. */
 const linkDir = (target: string, path: string) =>
   symlinkSync(target, path, isWindows ? "junction" : "dir");
 
@@ -116,7 +116,7 @@ describe("hostile skill names", () => {
       "---\nname: ../../../escape\ndescription: escapes\n---\nevil\n",
     );
     mkdirSync(join(folder, "loose"), { recursive: true });
-    // Not valid YAML, so skillfleet reads the name line by line.
+    // Not valid YAML, so fleetrc reads the name line by line.
     writeFileSync(
       join(folder, "loose/SKILL.md"),
       "---\nname: ../../../loose-escape\ndescription: a: b\n---\nloose\n",
@@ -205,13 +205,13 @@ describe("hostile manifests", () => {
     expect(existsSync(join(m.stateDir, "store", "v", "live", "private", "secret.txt"))).toBe(false);
   });
 
-  it("M4. an extended team manifest cannot make skillfleet clone into a path on this machine", async () => {
+  it("M4. an extended team manifest cannot make fleetrc clone into a path on this machine", async () => {
     const m = machine();
     const evil = remote(m, "evil", {
       "evil.desktop": "[Desktop Entry]\nExec=sh -c 'echo owned'\n",
     });
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
-    mkdirSync(join(m.root, "team", ".skillfleet"), { recursive: true });
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
+    mkdirSync(join(m.root, "team", ".fleetrc"), { recursive: true });
     writeFileSync(
       team,
       JSON.stringify({ sources: [{ id: "auto", git: evil.url, path: "~/.config/autostart" }] }),
@@ -226,8 +226,8 @@ describe("hostile manifests", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "team-skill"));
     const hub = await recorder();
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
-    mkdirSync(join(m.root, "team", ".skillfleet"), { recursive: true });
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
+    mkdirSync(join(m.root, "team", ".fleetrc"), { recursive: true });
     writeFileSync(
       team,
       JSON.stringify({
@@ -269,8 +269,8 @@ describe("hostile manifests", () => {
   it("M7. when an extended manifest breaks, the skills it provided keep their local edits", async () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
-    mkdirSync(join(m.root, "team", ".skillfleet"), { recursive: true });
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
+    mkdirSync(join(m.root, "team", ".fleetrc"), { recursive: true });
     writeFileSync(team, JSON.stringify({ sources: [{ id: "team", git: vendor.https }] }));
     const manifest = m.manifest({ agents: ["claude-code"], extends: [team], sources: [] });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
@@ -289,8 +289,8 @@ describe("hostile git sources", () => {
   it("G1. doctor does not run a git URL from a team manifest as an --upload-pack command", async () => {
     const m = machine({ scheduler: "empty" });
     const marker = join(m.root, "pwned-doctor");
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
-    mkdirSync(join(m.root, "team", ".skillfleet"), { recursive: true });
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
+    mkdirSync(join(m.root, "team", ".fleetrc"), { recursive: true });
     writeFileSync(
       team,
       JSON.stringify({ sources: [{ id: "x", git: `--upload-pack=touch ${marker};false` }] }),
@@ -465,8 +465,8 @@ describe("hostile npm registries and tarballs", () => {
       { "1.0.0": { tarball: `${url}/pkg.tgz`, integrity: sha512(archive) } },
       "1.0.0",
     );
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
-    mkdirSync(join(m.root, "team", ".skillfleet"), { recursive: true });
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
+    mkdirSync(join(m.root, "team", ".fleetrc"), { recursive: true });
     writeFileSync(team, JSON.stringify({ sources: [{ id: "n", npm: "pkg", registry: url }] }));
     const manifest = m.manifest({ agents: ["claude-code"], extends: [team], sources: [] });
     await m.runWith({ env: { NPM_TOKEN: "npm_secret" } }, "init", manifest, "--no-hooks");
@@ -621,7 +621,7 @@ describe("hostile skill indexes", () => {
     expect(report.sources.map((source) => source.id)).toContain("dev");
   });
 
-  it("I2. an archive entry without a digest, or with a digest in an algorithm skillfleet cannot check, is not installed", async () => {
+  it("I2. an archive entry without a digest, or with a digest in an algorithm fleetrc cannot check, is not installed", async () => {
     const m = machine();
     await installEach(m, [
       {
@@ -771,7 +771,7 @@ describe("fleet over ssh", () => {
             .split("\n")
             .map((line) => JSON.parse(line) as string[])
         : [];
-    return { env: { SKILLFLEET_SSH: ssh }, calls };
+    return { env: { FLEETRC_SSH: ssh }, calls };
   }
 
   it("F1. a fleet host that looks like an ssh option reaches ssh only after --, or is refused", async () => {
@@ -896,7 +896,7 @@ describe("crashes, corrupt state and recovery", () => {
       sources: [{ id: "vendor", git: vendor.url }],
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-    writeFileSync(m.at(".claude/skills/.skillfleet-manifest.json"), "{");
+    writeFileSync(m.at(".claude/skills/.fleetrc-manifest.json"), "{");
     vendor.commit({ "skills/second/SKILL.md": skillMd("second") });
     const run = await m.run("sync");
     expect(run.stderr).not.toMatch(/\n\s+at /);
@@ -943,7 +943,7 @@ describe("crashes, corrupt state and recovery", () => {
     writeFileSync(m.at(".cursor/skills"), "not a folder\n");
     rmSync(m.at(".claude/skills/tool"));
     linkDir(join(m.root, "gone"), m.at(".claude/skills/tool"));
-    writeFileSync(m.at(".claude/skills/.skillfleet-manifest.json"), '{"version":1,"links":{}}');
+    writeFileSync(m.at(".claude/skills/.fleetrc-manifest.json"), '{"version":1,"links":{}}');
     const report = await m.json("sync");
     expect(read(m.at(".cursor/skills"))).toBe("not a folder\n");
     expect(report.targets.map((target) => target.skipped).filter(Boolean)).toHaveLength(1);
@@ -960,7 +960,7 @@ describe("crashes, corrupt state and recovery", () => {
     const status = await m.run("status");
     const hook = await m.runWith({ input: '{"session_id":"s"}' }, "hook", "prompt");
     const fleet = await m.runWith(
-      { env: { SKILLFLEET_SSH: "false" } },
+      { env: { FLEETRC_SSH: "false" } },
       "fleet",
       "status",
       "--timeout",
@@ -982,8 +982,8 @@ describe("two syncs and a killed sync", () => {
       sources: [{ id: "vendor", git: vendor.url }],
       hooks: [{ name: "slow", run: slowHook(m, log, 20), on: ["vendor:**"] }],
     });
-    mkdirSync(join(m.home, ".config", "skillfleet"), { recursive: true });
-    writeFileSync(m.at(".config/skillfleet/config.json"), JSON.stringify({ manifest }));
+    mkdirSync(join(m.home, ".config", "fleetrc"), { recursive: true });
+    writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest }));
     const first = spawn(process.execPath, [cli, "sync"], {
       cwd: m.home,
       env: m.env,
@@ -995,7 +995,7 @@ describe("two syncs and a killed sync", () => {
     try {
       const second = await m.run("sync");
       expect(second.code).toBe(1);
-      expect(second.stderr).toContain("another skillfleet sync is running");
+      expect(second.stderr).toContain("another fleetrc sync is running");
       first.kill("SIGKILL");
       await exited;
 
@@ -1021,8 +1021,8 @@ describe("who holds the sync lock", () => {
       sources: [{ id: "vendor", git: vendor.url }],
       hooks: [{ name: "slow", run: slowHook(m, log, 20), on: ["vendor:**"] }],
     });
-    mkdirSync(join(m.home, ".config", "skillfleet"), { recursive: true });
-    writeFileSync(m.at(".config/skillfleet/config.json"), JSON.stringify({ manifest }));
+    mkdirSync(join(m.home, ".config", "fleetrc"), { recursive: true });
+    writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest }));
     const first = spawn(process.execPath, [script, "sync"], {
       cwd: m.home,
       env: m.env,
@@ -1040,7 +1040,7 @@ describe("who holds the sync lock", () => {
     };
   }
 
-  it("W-1. a sync started by another spelling of skillfleet's path holds the lock against a second sync", async () => {
+  it("W-1. a sync started by another spelling of fleetrc's path holds the lock against a second sync", async () => {
     const m = machine();
     // A launcher's `bin/../app/cli.mjs`, or a path relative to the current folder: node's argv[1]
     // is the resolved path, and the command line the OS keeps is not.
@@ -1054,7 +1054,7 @@ describe("who holds the sync lock", () => {
     try {
       const second = await m.run("sync");
       expect(second.code, second.stdout + second.stderr).toBe(1);
-      expect(second.stderr).toContain("another skillfleet sync is running");
+      expect(second.stderr).toContain("another fleetrc sync is running");
     } finally {
       await holder.stop();
     }
@@ -1092,7 +1092,7 @@ describe("who holds the sync lock", () => {
     );
     const run = await m.run("sync");
     expect(run.code).toBe(1);
-    expect(run.stderr).toContain(`another skillfleet sync is running (pid ${process.pid})`);
+    expect(run.stderr).toContain(`another fleetrc sync is running (pid ${process.pid})`);
   });
 });
 
@@ -1125,12 +1125,12 @@ describe("syncs started at the same moment", () => {
       // Holds the lock long enough that every other sync starts while it runs.
       hooks: [{ name: "slow", run: slowHook(m, log, 8), on: ["vendor:**"] }],
     });
-    mkdirSync(join(m.home, ".config", "skillfleet"), { recursive: true });
-    writeFileSync(m.at(".config/skillfleet/config.json"), JSON.stringify({ manifest }));
+    mkdirSync(join(m.home, ".config", "fleetrc"), { recursive: true });
+    writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest }));
     const runs = await Promise.all(Array.from({ length: 6 }, () => m.run("sync")));
     expect(runs.filter((run) => run.code === 0)).toHaveLength(1);
     for (const run of runs.filter((run) => run.code !== 0))
-      expect(run.stderr).toContain("another skillfleet sync is running");
+      expect(run.stderr).toContain("another fleetrc sync is running");
     expect(hookRuns(log)).toHaveLength(1);
   }, 60_000);
 });
@@ -1149,11 +1149,11 @@ describe("prune never deletes what it did not make", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({ sources: [{ id: "team", git: vendor.https }] }),
+      ".fleetrc/manifest.json": JSON.stringify({ sources: [{ id: "team", git: vendor.https }] }),
     });
     const manifest = m.manifest({
       agents: ["claude-code"],
-      extends: [`${team.url}//.skillfleet/manifest.json`],
+      extends: [`${team.url}//.fleetrc/manifest.json`],
       sources: [],
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
@@ -1180,7 +1180,7 @@ describe("prune never deletes what it did not make", () => {
     mkdirSync(join(m.root, "elsewhere"), { recursive: true });
     linkDir(join(m.root, "elsewhere"), m.at(".claude/skills/linked"));
     rmSync(m.stateDir, { recursive: true, force: true });
-    rmSync(m.at(".claude/skills/.skillfleet-manifest.json"));
+    rmSync(m.at(".claude/skills/.fleetrc-manifest.json"));
     writeFileSync(manifest, JSON.stringify({ agents: ["claude-code"], sources: [] }));
     await m.run("sync", "--manifest", manifest);
     expect(read(m.at(".claude/skills/handmade/SKILL.md"))).toBe("hand made\n");
@@ -1282,7 +1282,7 @@ describe("unusual environments", () => {
 
   it("V1. relative XDG_STATE_HOME and XDG_CONFIG_HOME are ignored, as the XDG spec says", async () => {
     const m = machine();
-    // A local source: with a git source the relative store path reaches `skills` as "rel-state/skillfleet",
+    // A local source: with a git source the relative store path reaches `skills` as "rel-state/fleetrc",
     // which it takes for a GitHub repository and fetches from github.com.
     const folder = join(m.root, "mine");
     mkdirSync(join(folder, "tool"), { recursive: true });
@@ -1295,8 +1295,8 @@ describe("unusual environments", () => {
     expect(existsSync(m.at("rel-config"))).toBe(false);
     // Without XDG_CONFIG_HOME, Windows keeps the config in %APPDATA%.
     const config = isWindows
-      ? "AppData/Roaming/skillfleet/config.json"
-      : ".config/skillfleet/config.json";
+      ? "AppData/Roaming/fleetrc/config.json"
+      : ".config/fleetrc/config.json";
     expect(existsSync(m.at(config))).toBe(true);
   });
 
@@ -1314,7 +1314,7 @@ describe("unusual environments", () => {
     expect(init.code, init.stderr).toBe(0);
     expect(names(join(home, ".claude/skills"))).toEqual(["tool"]);
     expect((await m.runWith({ env }, "self-install")).code).toBe(0);
-    const launcher = join(home, ".local/state/skillfleet/bin/skillfleet");
+    const launcher = join(home, ".local/state/fleetrc/bin/fleetrc");
     // Windows runs the .cmd launcher; the sh one is for Git Bash. A .cmd only runs through cmd.
     const out = isWindows
       ? execFileSync(`"${launcher}.cmd"`, ["--version"], {
@@ -1374,14 +1374,12 @@ describe("unusual environments", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const repo = remote(m, "manifest-repo", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "v", git: vendor.url }],
       }),
     });
-    expect((await m.run("init", `${repo.url}//.skillfleet/manifest.json`, "--no-hooks")).code).toBe(
-      0,
-    );
+    expect((await m.run("init", `${repo.url}//.fleetrc/manifest.json`, "--no-hooks")).code).toBe(0);
     rmSync(repo.url, { recursive: true, force: true });
     const report = await m.json("sync", "--offline");
     expect(report.ok).toBe(true);

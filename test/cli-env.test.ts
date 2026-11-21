@@ -21,11 +21,11 @@ const engines = (
 ).engines.node;
 
 describe("cli and environments", () => {
-  it("L10. init <repository URL> reads .skillfleet/manifest.json from that repository and keeps <repo>//.skillfleet/manifest.json", async () => {
+  it("L10. init <repository URL> reads .fleetrc/manifest.json from that repository and keeps <repo>//.fleetrc/manifest.json", async () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "from-repo"));
     const manifests = remote(m, "manifests", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "vendor", git: vendor.url }],
       }),
@@ -34,10 +34,10 @@ describe("cli and environments", () => {
     const init = await m.run("init", url, "--no-hooks");
     expect(init.code, init.stdout + init.stderr).toBe(0);
     expect(names(m.at(".claude/skills"))).toEqual(["from-repo"]);
-    const config = JSON.parse(readFileSync(m.at(".config/skillfleet/config.json"), "utf8")) as {
+    const config = JSON.parse(readFileSync(m.at(".config/fleetrc/config.json"), "utf8")) as {
       manifest: string;
     };
-    expect(config.manifest).toBe(`${url}//.skillfleet/manifest.json`);
+    expect(config.manifest).toBe(`${url}//.fleetrc/manifest.json`);
   });
 
   it("L10. a repository with only a skills.json at its root says where it looked and to name the file", async () => {
@@ -46,7 +46,7 @@ describe("cli and environments", () => {
     const init = await m.run("init", pathToFileURL(manifests.url).href, "--no-hooks");
     expect(init.code).toBe(1);
     expect(init.stderr).toMatch(
-      /has no \.skillfleet\/manifest\.json; name the manifest file as .*\/\/<file>/,
+      /has no \.fleetrc\/manifest\.json; name the manifest file as .*\/\/<file>/,
     );
   });
 
@@ -64,14 +64,14 @@ describe("cli and environments", () => {
     expect(names(m.at(".claude/skills"))).toEqual(["from-file"]);
   });
 
-  it("L10. a local folder means its .skillfleet/manifest.json, whose relative paths start in .skillfleet/", async () => {
+  it("L10. a local folder means its .fleetrc/manifest.json, whose relative paths start in .fleetrc/", async () => {
     const m = machine();
     const folder = join(m.root, "mine");
     mkdirSync(join(folder, "skills/tool"), { recursive: true });
     writeFileSync(join(folder, "skills/tool/SKILL.md"), "---\nname: tool\ndescription: d\n---\n");
-    mkdirSync(join(folder, ".skillfleet"));
+    mkdirSync(join(folder, ".fleetrc"));
     writeFileSync(
-      join(folder, ".skillfleet/manifest.json"),
+      join(folder, ".fleetrc/manifest.json"),
       JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "mine", local: "../skills" }],
@@ -89,13 +89,13 @@ describe("cli and environments", () => {
     writeFileSync(join(folder, "skills.json"), JSON.stringify({ sources: [] }));
     const init = await m.run("init", folder, "--no-hooks");
     expect(init.code).toBe(1);
-    expect(init.stderr).toContain(`has no .skillfleet/manifest.json; name the manifest file`);
+    expect(init.stderr).toContain(`has no .fleetrc/manifest.json; name the manifest file`);
   });
 
   it("L1. add on a remote manifest refuses and prints the source to add upstream", async () => {
     const m = machine();
     const manifests = remote(m, "manifests", {
-      ".skillfleet/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
+      ".fleetrc/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
     });
     expect((await m.run("init", manifests.url, "--no-hooks")).code).toBe(0);
     const extra = remote(m, "extra", skills("skills/", "extra-a"));
@@ -111,7 +111,7 @@ describe("cli and environments", () => {
   it("L1. add on a remote manifest with a working clone edits the clone and asks for a push", async () => {
     const m = machine();
     const manifests = remote(m, "manifests", {
-      ".skillfleet/manifest.json": "{}",
+      ".fleetrc/manifest.json": "{}",
       "skills/mine/SKILL.md": "---\nname: mine\ndescription: d\n---\n",
     });
     const work = clone(m, manifests, "code/manifests");
@@ -119,20 +119,20 @@ describe("cli and environments", () => {
       agents: ["claude-code"],
       sources: [{ id: "mine", git: manifests.url, path: work, skills: "skills/*" }],
     };
-    manifests.commit({ ".skillfleet/manifest.json": JSON.stringify(content) });
+    manifests.commit({ ".fleetrc/manifest.json": JSON.stringify(content) });
     m.git(work, "pull", "--quiet");
     expect((await m.run("init", manifests.url, "--no-hooks")).code).toBe(0);
     const extra = remote(m, "extra", skills("skills/", "extra-a"));
     const added = await m.run("add", extra.url, "--id", "extra");
     expect(added.code, added.stderr).toBe(0);
     expect(added.stdout).toContain("commit and push it");
-    const edited = JSON.parse(readFileSync(join(work, ".skillfleet/manifest.json"), "utf8")) as {
+    const edited = JSON.parse(readFileSync(join(work, ".fleetrc/manifest.json"), "utf8")) as {
       sources: { id: string }[];
     };
     expect(edited.sources.map((source) => source.id)).toEqual(["mine", "extra"]);
   });
 
-  it("L13. an older Node gets one line naming the version skillfleet needs", async () => {
+  it("L13. an older Node gets one line naming the version fleetrc needs", async () => {
     const m = machine();
     expect(engines).toBe(">=22.12.0");
     const { spawnSync } = await import("node:child_process");
@@ -150,7 +150,7 @@ describe("cli and environments", () => {
   it("L15. fleet upgrade refuses a version hosts cannot install from npm", async () => {
     const m = machine();
     const manifest = m.manifest({ agents: ["claude-code"], sources: [], fleet: ["localhost"] });
-    // A registry without skillfleet, so the check never depends on what npm has.
+    // A registry without fleetrc, so the check never depends on what npm has.
     const registry = await http();
     const called = join(m.root, "ssh-called");
     const ssh = join(m.root, "ssh.mjs");
@@ -159,14 +159,14 @@ describe("cli and environments", () => {
       `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(called)}, "");\n`,
     );
     const upgrade = await m.runWith(
-      { env: { npm_config_registry: registry.url, SKILLFLEET_SSH: ssh } },
+      { env: { npm_config_registry: registry.url, FLEETRC_SSH: ssh } },
       "fleet",
       "upgrade",
       "--manifest",
       manifest,
     );
     expect(upgrade.code).toBe(1);
-    expect(upgrade.stderr).toMatch(/npx skillfleet@latest fleet upgrade/);
+    expect(upgrade.stderr).toMatch(/npx fleetrc@latest fleet upgrade/);
     expect(existsSync(called)).toBe(false);
   });
 

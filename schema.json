@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://unpkg.com/skillfleet/schema.json",
-  "title": "skillfleet manifest",
+  "$id": "https://unpkg.com/fleetrc/schema.json",
+  "title": "fleetrc manifest",
   "description": "Where skills come from and which agents get them. Sources are listed in precedence order: the first source with a skill name wins.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string",
-      "description": "This schema, for editors: https://unpkg.com/skillfleet/schema.json"
+      "description": "This schema, for editors: https://unpkg.com/fleetrc/schema.json"
     },
     "extends": {
-      "description": "Team manifests, as paths or <repo>//<file> such as github:org/agents//team.json; a repository alone means its .skillfleet/manifest.json. They add sources only; their hooks, fleet, hub and report are ignored. An entry may be an object that leaves some of the team's skills or sources out; `skillfleet remove` writes it.",
+      "description": "Team manifests, as paths or <repo>//<file> such as github:org/agents//team.json; a repository alone means its .fleetrc/manifest.json. They add sources only; their hooks, fleet, hub and report are ignored. An entry may be an object that leaves some of the team's skills or sources out; `fleetrc remove` writes it.",
       "type": "array",
       "items": {
         "oneOf": [
@@ -42,7 +42,7 @@
       }
     },
     "agents": {
-      "description": "\"all\" for every agent installed on the machine (one whose folder is in your home, such as ~/.claude for Claude Code), or agent ids from the skills package (claude-code, codex, gemini-cli, opencode, cursor, github-copilot, ...). `skillfleet agents` lists the ids.",
+      "description": "\"all\" for every agent installed on the machine (one whose folder is in your home, such as ~/.claude for Claude Code), or agent ids from the skills package (claude-code, codex, gemini-cli, opencode, cursor, github-copilot, ...). `fleetrc agents` lists the ids.",
       "oneOf": [
         { "const": "all" },
         { "type": "array", "items": { "type": "string", "minLength": 1 } }
@@ -54,7 +54,7 @@
       "items": { "$ref": "#/$defs/source" }
     },
     "forks": {
-      "description": "Skills copied from upstream into the personal repository, by skill name. `skillfleet diff` and `merge` compare against `from` at `base`.",
+      "description": "Skills copied from upstream into the personal repository, by skill name. `fleetrc diff` and `merge` compare against `from` at `base`.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -90,12 +90,12 @@
           "name": {
             "type": "string",
             "minLength": 1,
-            "description": "Names the hook in the report and in SKILLFLEET_HOOK. Defaults to run."
+            "description": "Names the hook in the report and in FLEETRC_HOOK. Defaults to run."
           },
           "run": {
             "type": "string",
             "minLength": 1,
-            "description": "Shell command. Gets the sync report as JSON on stdin, SKILLFLEET_HOOK, and SKILLFLEET_CHANGED: the matched <source>:<file> lines."
+            "description": "Shell command. Gets the sync report as JSON on stdin, FLEETRC_HOOK, and FLEETRC_CHANGED: the matched <source>:<file> lines."
           },
           "on": {
             "description": "<source id>:<glob> patterns, such as personal:pstack/**. Default: any change.",
@@ -106,7 +106,7 @@
       }
     },
     "fleet": {
-      "description": "SSH hosts for `skillfleet fleet`, and tag:<name> entries that stand for every machine on your tailnet with that Tailscale tag.",
+      "description": "SSH hosts for `fleetrc fleet`, and tag:<name> entries that stand for every machine on your tailnet with that Tailscale tag.",
       "type": "array",
       "items": {
         "type": "string",
@@ -140,11 +140,11 @@
           "type": "string",
           "default": "*/30 * * * *",
           "pattern": "^\\S+(\\s+\\S+){4}$",
-          "description": "When the timer runs the sync: a five-field cron expression (minute 0-59, hour 0-23, day of month 1-31, month 1-12, day of week 0-7), such as \"*/30 * * * *\". \"* * * * *\" runs it every minute. skillfleet refuses a value out of range when it reads the manifest."
+          "description": "When the timer runs the sync: a five-field cron expression (minute 0-59, hour 0-23, day of month 1-31, month 1-12, day of week 0-7), such as \"*/30 * * * *\". \"* * * * *\" runs it every minute. fleetrc refuses a value out of range when it reads the manifest."
         },
         "timeZone": {
           "type": "string",
-          "description": "IANA time zone of the cron, such as \"Europe/Madrid\" or \"UTC\", or \"local\"; skillfleet refuses a name Node.js does not know. Defaults to \"local\": the machine's time zone, following its clock changes and a move to another zone. launchd and Task Scheduler run timers in the machine's time zone, so on macOS and Windows another zone works only when it gives the same times."
+          "description": "IANA time zone of the cron, such as \"Europe/Madrid\" or \"UTC\", or \"local\"; fleetrc refuses a name Node.js does not know. Defaults to \"local\": the machine's time zone, following its clock changes and a move to another zone. launchd and Task Scheduler run timers in the machine's time zone, so on macOS and Windows another zone works only when it gives the same times."
         }
       }
     }
@@ -178,7 +178,7 @@
         "update": {
           "enum": ["auto", "review"],
           "default": "auto",
-          "description": "review: fetch and show a diff, apply only on `skillfleet update <source>`."
+          "description": "review: fetch and show a diff, apply only on `fleetrc update <source>`."
         }
       }
     },
@@ -186,7 +186,7 @@
       "type": "object",
       "oneOf": [
         {
-          "description": "A git repository. With `path`, a working clone you edit, updated by fast-forward and linked in place; without, a copy skillfleet keeps.",
+          "description": "A git repository. With `path`, a working clone you edit, updated by fast-forward and linked in place; without, a copy fleetrc keeps.",
           "required": ["git"],
           "additionalProperties": false,
           "properties": {

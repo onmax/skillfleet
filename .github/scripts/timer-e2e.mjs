@@ -1,17 +1,17 @@
-// Installs skillfleet from its packed tarball, points it at a local git source with `init --timer`, and
+// Installs fleetrc from its packed tarball, points it at a local git source with `init --timer`, and
 // waits for the real OS scheduler (systemd, launchd or Task Scheduler) to run the sync twice: once
 // on its own, and again after a new skill lands upstream. Then it checks `status`, installs again
 // to prove that changes nothing, removes the timer, and checks the OS has nothing left.
 //
-//   pnpm --filter skillfleet build
-//   pnpm pack --out skillfleet.tgz
-//   node .github/scripts/timer-e2e.mjs skillfleet.tgz
-//   node .github/scripts/timer-e2e.mjs skillfleet.tgz --home-name "O'Brien & Zoë"
+//   pnpm --filter fleetrc build
+//   pnpm pack --out fleetrc.tgz
+//   node .github/scripts/timer-e2e.mjs fleetrc.tgz
+//   node .github/scripts/timer-e2e.mjs fleetrc.tgz --home-name "O'Brien & Zoë"
 //
 // --home-name names the throwaway HOME folder, so the timer's files, its command line and its
 // environment carry that name (the windows-break job passes cmd and PowerShell metacharacters).
 //
-// Everything skillfleet writes lives under a throwaway HOME, but the timer itself goes into the
+// Everything fleetrc writes lives under a throwaway HOME, but the timer itself goes into the
 // OS scheduler of the user that runs this. It always removes it again, and it refuses to run
 // outside CI unless you pass --yes. On Linux it needs a systemd user manager: run it in a login
 // session, or with linger on and XDG_RUNTIME_DIR set, as CI does.
@@ -28,7 +28,7 @@ const { values, positionals } = parseArgs({
   options: { yes: { type: "boolean" }, "home-name": { type: "string", default: "home" } },
 });
 const tarball = positionals[0] && resolve(positionals[0]);
-assert.ok(tarball && existsSync(tarball), "pass the path of the packed skillfleet tarball");
+assert.ok(tarball && existsSync(tarball), "pass the path of the packed fleetrc tarball");
 if (process.env.CI !== "true" && !values.yes) {
   console.error(
     "timer-e2e installs a real timer in your OS scheduler (and removes it). Pass --yes to run it outside CI.",
@@ -36,23 +36,23 @@ if (process.env.CI !== "true" && !values.yes) {
   process.exit(2);
 }
 
-const NAME = "skillfleet-sync";
+const NAME = "fleetrc-sync";
 const FIRST_RUN_MS = 180_000;
 const SECOND_RUN_MS = 240_000;
 const POLL_MS = 5_000;
 const platform = process.platform;
 const realHome = homedir();
 
-const root = mkdtempSync(join(tmpdir(), "skillfleet-timer-e2e-"));
+const root = mkdtempSync(join(tmpdir(), "fleetrc-timer-e2e-"));
 const home = join(root, values["home-name"]);
 const prefix = join(root, "prefix");
 const bare = join(root, "remotes", "vendor.git");
 const work = join(root, "upstream", "vendor");
-const manifestFile = join(root, "manifest", ".skillfleet", "manifest.json");
-const stateDir = join(home, ".local", "state", "skillfleet");
+const manifestFile = join(root, "manifest", ".fleetrc", "manifest.json");
+const stateDir = join(home, ".local", "state", "fleetrc");
 const claudeSkills = join(home, ".claude", "skills");
 
-/** The environment of every skillfleet and git run: a throwaway HOME and the folders under it. */
+/** The environment of every fleetrc and git run: a throwaway HOME and the folders under it. */
 const env = { ...process.env };
 for (const key of Object.keys(env))
   if (key.startsWith("GIT_") || key === "CLAUDE_CONFIG_DIR" || key === "CODEX_HOME")
@@ -93,26 +93,26 @@ const git = (cwd, ...args) =>
   execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
 let cli;
-function skillfleet(...args) {
+function fleetrc(...args) {
   const result = run(process.execPath, [cli, ...args]);
-  step(`skillfleet ${args.join(" ")} -> exit ${result.code}`);
+  step(`fleetrc ${args.join(" ")} -> exit ${result.code}`);
   return result;
 }
 
-function skillfleetJson(...args) {
-  const result = skillfleet(...args, "--json");
+function fleetrcJson(...args) {
+  const result = fleetrc(...args, "--json");
   try {
     return { ...result, json: JSON.parse(result.stdout) };
   } catch {
     assert.fail(
-      `skillfleet ${args.join(" ")} --json printed no JSON (exit ${result.code}):\n${result.stdout}\n${result.stderr}`,
+      `fleetrc ${args.join(" ")} --json printed no JSON (exit ${result.code}):\n${result.stdout}\n${result.stderr}`,
     );
   }
 }
 
 const skillMd = (name) => `---\nname: ${name}\ndescription: The ${name} skill\n---\n${name} body\n`;
 
-/** The OS's own answer to "is there a timer called skillfleet-sync?", without skillfleet. */
+/** The OS's own answer to "is there a timer called fleetrc-sync?", without fleetrc. */
 function osKnows() {
   if (platform === "linux") {
     const timer = run("systemctl", ["--user", "cat", `${NAME}.timer`]);
@@ -145,13 +145,10 @@ function osKnows() {
 function leftoversInRealHome() {
   const candidates =
     platform === "linux"
-      ? [
-          ".config/systemd/user/skillfleet-sync.service",
-          ".config/systemd/user/skillfleet-sync.timer",
-        ]
+      ? [".config/systemd/user/fleetrc-sync.service", ".config/systemd/user/fleetrc-sync.timer"]
       : platform === "darwin"
-        ? ["Library/LaunchAgents/skillfleet-sync.plist"]
-        : ["AppData/Local/ViteHub/schedules/skillfleet-sync.ps1"];
+        ? ["Library/LaunchAgents/fleetrc-sync.plist"]
+        : ["AppData/Local/ViteHub/schedules/fleetrc-sync.ps1"];
   return candidates.map((file) => join(realHome, file)).filter((file) => existsSync(file));
 }
 
@@ -178,7 +175,7 @@ function diagnose() {
   console.log("[timer-e2e] --- diagnostics ---");
   for (const args of [["timer", "status", "--json"], ["status"]]) {
     const result = run(process.execPath, [cli, ...args]);
-    console.log(`$ skillfleet ${args.join(" ")}\n${result.stdout}${result.stderr}`);
+    console.log(`$ fleetrc ${args.join(" ")}\n${result.stdout}${result.stderr}`);
   }
   console.log("[timer-e2e] OS view:", osKnows().output);
   if (platform === "linux") {
@@ -214,7 +211,7 @@ try {
     { env: process.env, cwd: prefix },
   );
   assert.equal(npm.code, 0, `npm install failed:\n${npm.stdout}\n${npm.stderr}`);
-  cli = join(prefix, "node_modules", "skillfleet", "dist", "cli.mjs");
+  cli = join(prefix, "node_modules", "fleetrc", "dist", "cli.mjs");
   assert.ok(existsSync(cli), `${cli} is missing after npm install`);
 
   step("make a throwaway HOME, a local git source with one skill, and a manifest");
@@ -222,7 +219,7 @@ try {
   writeFileSync(
     join(home, ".gitconfig"),
     [
-      "[user]\n\tname = skillfleet e2e\n\temail = e2e@example.com",
+      "[user]\n\tname = fleetrc e2e\n\temail = e2e@example.com",
       "[init]\n\tdefaultBranch = main",
       "[commit]\n\tgpgsign = false",
       "[core]\n\tautocrlf = false",
@@ -253,8 +250,8 @@ try {
     )}\n`,
   );
 
-  step("skillfleet init --timer: sync once and install the timer");
-  const init = skillfleet("init", manifestFile, "--timer");
+  step("fleetrc init --timer: sync once and install the timer");
+  const init = fleetrc("init", manifestFile, "--timer");
   installed = true;
   console.log(init.stdout, init.stderr);
   assert.equal(init.code, 0, "init failed");
@@ -270,24 +267,24 @@ try {
   assert.ok(listed.known, `the OS does not list ${NAME} after init:\n${listed.output}`);
 
   step("install again: an identical install changes nothing");
-  const before = skillfleetJson("timer", "status").json;
+  const before = fleetrcJson("timer", "status").json;
   assert.equal(before.installed, true, "timer status says the timer is not installed");
-  const again = skillfleetJson("timer", "install");
+  const again = fleetrcJson("timer", "install");
   assert.equal(again.code, 0, `the second install failed:\n${again.stdout}\n${again.stderr}`);
   assert.equal(again.json.changed, false, "a second identical install must report changed: false");
   const owned = again.json.files.filter((file) => !file.endsWith(".log"));
   assert.ok(owned.length > 0, "the install reports no files");
   const hashes = owned.map(hashFile);
-  const third = skillfleetJson("timer", "install");
+  const third = fleetrcJson("timer", "install");
   assert.equal(third.json.changed, false, "a third identical install must report changed: false");
   assert.deepEqual(owned.map(hashFile), hashes, "an identical install rewrote the timer's files");
-  const text = skillfleet("timer", "install");
+  const text = fleetrc("timer", "install");
   assert.match(text.stdout, /already installed, unchanged/);
 
   step("a dry run and doctor see the timer as installed, running the launcher's node");
-  const dry = skillfleet("timer", "install", "--dry-run");
+  const dry = fleetrc("timer", "install", "--dry-run");
   assert.match(dry.stdout, /already installed, unchanged/, dry.stdout);
-  const doctor = skillfleet("doctor");
+  const doctor = fleetrc("doctor");
   console.log(doctor.stdout);
   assert.match(doctor.stdout, /^ok {3}node: /m, "doctor does not find the node the timer runs");
   assert.doesNotMatch(doctor.stdout, /^FAIL (node|timer):/m);
@@ -315,7 +312,7 @@ try {
   );
 
   step("status reports the timer and its last run");
-  const status = skillfleetJson("status");
+  const status = fleetrcJson("status");
   assert.equal(status.code, 0);
   assert.equal(status.json.timer.installed, true, "status says the timer is not installed");
   assert.equal(status.json.timer.platform, platform);
@@ -328,14 +325,14 @@ try {
   if (platform !== "darwin") assert.ok(status.json.timer.lastRunAt, "status has no lastRunAt");
   if (status.json.timer.lastExitCode !== undefined)
     assert.equal(status.json.timer.lastExitCode, 0, "the last scheduled run did not exit 0");
-  const statusText = skillfleet("status");
+  const statusText = fleetrc("status");
   console.log(statusText.stdout);
   assert.match(statusText.stdout, /^last run: /m);
   assert.match(statusText.stdout, /^timer: installed/m);
   if (platform !== "darwin") assert.match(statusText.stdout, /^timer: installed.*last run /m);
 
   step("timer remove");
-  const removal = skillfleetJson("timer", "remove");
+  const removal = fleetrcJson("timer", "remove");
   assert.equal(removal.code, 0, removal.stderr);
   assert.equal(removal.json.existed, true);
   installed = false;
@@ -343,10 +340,10 @@ try {
   const gone = osKnows();
   assert.ok(!gone.known, `the OS still lists ${NAME} after timer remove:\n${gone.output}`);
   assert.deepEqual(leftoversInRealHome(), [], "timer files are left in the real home");
-  const after = skillfleet("timer", "status");
+  const after = fleetrc("timer", "status");
   assert.equal(after.code, 1, "timer status exits 1 once the timer is gone");
   assert.match(after.stdout, /not installed/);
-  const removeAgain = skillfleet("timer", "remove");
+  const removeAgain = fleetrc("timer", "remove");
   assert.equal(removeAgain.code, 0);
   assert.match(removeAgain.stdout, /no timer installed/);
 

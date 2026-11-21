@@ -1,5 +1,5 @@
 {
-  "name": "skillfleet",
+  "name": "fleetrc",
   "version": "0.0.0",
   "description": "The same skills on every agent and every machine, synced when an agent session starts.",
   "keywords": [
@@ -18,16 +18,16 @@
     "sync",
     "tailscale"
   ],
-  "homepage": "https://github.com/onmax/skillfleet#readme",
-  "bugs": "https://github.com/onmax/skillfleet/issues",
+  "homepage": "https://github.com/onmax/fleetrc#readme",
+  "bugs": "https://github.com/onmax/fleetrc/issues",
   "license": "MIT",
   "author": "onmax",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/onmax/skillfleet.git"
+    "url": "git+https://github.com/onmax/fleetrc.git"
   },
   "bin": {
-    "skillfleet": "./dist/cli.mjs"
+    "fleetrc": "./dist/cli.mjs"
   },
   "files": [
     "dist",

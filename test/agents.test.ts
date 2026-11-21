@@ -1,5 +1,5 @@
 // Breaks found by running real agents (Claude Code, Codex, Gemini CLI, OpenCode, Copilot CLI, Grok,
-// Goose, Amp) against the folders skillfleet links. Each case states what a user should get; they
+// Goose, Amp) against the folders fleetrc links. Each case states what a user should get; they
 // fail until the matching fix lands.
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -59,7 +59,7 @@ describe("agents", () => {
     expect(both).toEqual([]);
   });
 
-  // Before 0.0.1, skillfleet linked every skill into Gemini's own folder as well.
+  // Before 0.0.1, fleetrc linked every skill into Gemini's own folder as well.
   it("A1b. sync removes the links it made in Gemini's own folder once ~/.agents/skills holds them", async () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "alpha", "beta"));
@@ -73,13 +73,13 @@ describe("agents", () => {
     const report = await m.json("sync");
     expect(report.ok, report.errors.join("\n")).toBe(true);
     expect(names(m.at(".agents/skills"))).toEqual(["alpha", "beta"]);
-    // Gemini's own skill stays; the links and skillfleet's record of them go.
+    // Gemini's own skill stays; the links and fleetrc's record of them go.
     expect(readdirSync(m.at(".gemini/skills"))).toEqual(["mine"]);
     expect(report.targets.find((t) => t.dir === m.at(".gemini/skills"))?.removed).toEqual([
       "alpha",
       "beta",
     ]);
-    expect((await m.run("sync")).stdout).toMatch(/^skillfleet: linked 2 skills into 1 folder$/m);
+    expect((await m.run("sync")).stdout).toMatch(/^fleetrc: linked 2 skills into 1 folder$/m);
   });
 
   // A folder that is another path to ~/.agents/skills is not a former target to empty.

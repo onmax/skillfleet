@@ -27,8 +27,8 @@ scenario() {
   done
   [ "${1:-}" = "--" ] && shift
   # shellcheck disable=SC2086
-  docker run --rm $dargs -v "$tgz:/pkg/skillfleet.tgz:ro" -v "$here:/envs:ro" \
-    -e SF_TGZ=/pkg/skillfleet.tgz "$@" "$img" sh /envs/scenario.sh
+  docker run --rm $dargs -v "$tgz:/pkg/fleetrc.tgz:ro" -v "$here:/envs:ro" \
+    -e SF_TGZ=/pkg/fleetrc.tgz "$@" "$img" sh /envs/scenario.sh
 }
 
 for env in $envs; do
@@ -38,8 +38,8 @@ for env in $envs; do
     bookworm24-nogit) scenario node:24-bookworm-slim -u node -- ;;
     ubuntu22) scenario sf-u2-ubuntu22 -- ;;
     node20) scenario node:20-alpine -u node -- ;;
-    node18) docker run --rm -u node -v "$tgz:/pkg/skillfleet.tgz:ro" node:18-alpine sh -c \
-      'cd ~ && npx -y --package /pkg/skillfleet.tgz -- skillfleet --version; echo "exit $?"' ;;
+    node18) docker run --rm -u node -v "$tgz:/pkg/fleetrc.tgz:ro" node:18-alpine sh -c \
+      'cd ~ && npx -y --package /pkg/fleetrc.tgz -- fleetrc --version; echo "exit $?"' ;;
     oddpaths) scenario sf-u2-alpine22 -- -e "SF_HOME=/home/node/hö me ü/x y" -e "SF_SRV=/home/node/srv with space/ñ" ;;
     noexec-tmp) scenario sf-u2-alpine22 --tmpfs /tmp:rw,noexec,nosuid,size=64m -- ;;
     readonly-agent) scenario sf-u2-alpine22 -- -e SF_RO=.gemini/skills ;;

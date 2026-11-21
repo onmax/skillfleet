@@ -32,6 +32,7 @@ import { registryUrl, urlOrigin } from "./npm.ts";
 import { expandPath, paths, tildify } from "./paths.ts";
 import { tailscaleManifest } from "./tailscale.ts";
 import { cronProblem, timeZoneProblem } from "./timer.ts";
+import { LEGACY_MANIFEST_DIR, legacyWarning } from "./legacy.ts";
 
 export type UpdateMode = "auto" | "review";
 
@@ -62,7 +63,7 @@ export interface CloneSource extends SourceCommon {
   followLinks: boolean;
 }
 
-/** A git repository skillfleet keeps a copy of. */
+/** A git repository fleetrc keeps a copy of. */
 export interface GitSource extends SourceCommon {
   kind: "git";
   git: string;
@@ -366,7 +367,7 @@ export function parseManifest(
       fail(
         file,
         "agents",
-        `names ${unknown.map((id) => `"${id}"`).join(", ")}, which ${unknown.length === 1 ? "is not an agent id" : "are not agent ids"}${near ? ` (did you mean "${near}"?)` : ""}; \`skillfleet agents\` lists the ids`,
+        `names ${unknown.map((id) => `"${id}"`).join(", ")}, which ${unknown.length === 1 ? "is not an agent id" : "are not agent ids"}${near ? ` (did you mean "${near}"?)` : ""}; \`fleetrc agents\` lists the ids`,
       );
     }
   }
@@ -512,7 +513,7 @@ export interface LoadedManifest {
 }
 
 /** The folder a repository or project keeps its manifest in. */
-const MANIFEST_DIR = ".skillfleet";
+const MANIFEST_DIR = ".fleetrc";
 
 /**
  * The manifest file a repository or folder holds when a spec names only the repository or folder,
@@ -575,7 +576,7 @@ function decoded(part: string): string {
   }
 }
 
-/** A `blob` link names a manifest file, a `tree` link a folder holding `.skillfleet/manifest.json`. */
+/** A `blob` link names a manifest file, a `tree` link a folder holding `.fleetrc/manifest.json`. */
 function webManifest(spec: string): RemoteManifest | undefined {
   const page = webPage(spec);
   if (!page) return undefined;
@@ -595,7 +596,7 @@ export interface RemoteManifest {
 
 /**
  * The repository and file of a manifest kept in git, or undefined for a file on this machine.
- * `<repo>//<file>` names both; a repository alone means its `.skillfleet/manifest.json`, and so does
+ * `<repo>//<file>` names both; a repository alone means its `.fleetrc/manifest.json`, and so does
  * a GitHub or GitLab page link. A path that exists on this machine, resolved against `base`, is
  * local, unless it is a bare repository.
  */
@@ -630,7 +631,7 @@ export function canonicalManifestSpec(spec: string): string {
 export function sharedManifestProblem(spec: string): string | undefined {
   const remote = remoteManifest(spec);
   if (remote && isRemoteGit(remote.repo)) return undefined;
-  return `the manifest is ${spec}, on this machine, which other machines can't read; push it to a repository and run \`skillfleet init <repository>\` with that`;
+  return `the manifest is ${spec}, on this machine, which other machines can't read; push it to a repository and run \`fleetrc init <repository>\` with that`;
 }
 
 /**
@@ -891,23 +892,19 @@ async function locate(
 ): Promise<{ file: string; root: string }> {
   const remote = remoteManifest(spec, base);
   if (!remote) {
-    // A folder, such as a clone of the manifest's repository, means its .skillfleet/manifest.json.
+    // A folder, such as a clone of the manifest's repository, means its .fleetrc/manifest.json.
     const path = expandPath(spec, base);
     const info = statSync(path, { throwIfNoEntry: false });
     const folder = info?.isDirectory() === true;
     const traversesParent = path.split(sep === "\\" ? /[\\/]/ : "/").includes("..");
-    const file = folder
-      ? join(path, DEFAULT_MANIFEST)
-      : info && !traversesParent
-        ? normalize(path)
-        : path;
+    const file = folder ? legacyManifest(path) : info && !traversesParent ? normalize(path) : path;
     if (folder && !existsSync(file))
       throw new ManifestError(
         `${tildify(path)} has no ${DEFAULT_MANIFEST}; name the manifest file as ${join(tildify(path), "<file>")}`,
       );
     if (team) within(team.within, file, spec);
     // Naming a folder, as a repository's checkout is, makes the whole folder the manifest's; a
-    // file named on its own, even one in a .skillfleet/ folder, has only its own folder.
+    // file named on its own, even one in a .fleetrc/ folder, has only its own folder.
     return { file, root: team?.within ?? (folder ? path : dirname(file)) };
   }
   const url = gitUrl(remote.repo);
@@ -917,13 +914,52 @@ async function locate(
     if (problem) throw new ManifestError(problem);
   }
   const clone = await checkout(url, remote.ref, cacheRoot, { offline, check });
-  const file = join(clone.dir, remote.path);
+  const file = otherDefault(clone.dir, remote.path);
   if (!existsSync(file))
     throw new ManifestError(
       `${url} has no ${remote.path}; name the manifest file as ${remote.repo}//<file>`,
     );
   if (team) within(clone.dir, file, spec);
   return { file, root: clone.dir };
+}
+
+/**
+ * A folder's manifest: `.fleetrc/manifest.json`, or for one release, with a warning, the
+ * manifest folder of fleetrc's old name (legacy.ts) when only that holds one.
+ */
+function legacyManifest(folder: string): string {
+  const file = join(folder, DEFAULT_MANIFEST);
+  const legacy = join(folder, LEGACY_MANIFEST_DIR, "manifest.json");
+  if (existsSync(file) || !existsSync(legacy)) return file;
+  legacyWarning(
+    `${tildify(legacy)} is the manifest's old place; move it to ${DEFAULT_MANIFEST} before the next release stops reading it`,
+  );
+  return legacy;
+}
+
+/**
+ * The manifest at `path` in a checkout; when `path` is the default and missing, the other of the
+ * old name's default and the new one.
+ */
+function otherDefault(dir: string, path: string): string {
+  const file = join(dir, path);
+  const legacyPath = `${LEGACY_MANIFEST_DIR}/manifest.json`;
+  if (existsSync(file)) return file;
+  if (path === DEFAULT_MANIFEST) return legacyManifest(dir);
+  if (path === legacyPath && existsSync(join(dir, DEFAULT_MANIFEST)))
+    return join(dir, DEFAULT_MANIFEST);
+  return file;
+}
+
+/**
+ * The path in its repository of the manifest at `path` that `locate` found at `file`: `path`, or
+ * the other of the old name's default and the new one when `otherDefault` took that.
+ */
+export function checkedOutPath(path: string, file: string): string {
+  const legacyPath = `${LEGACY_MANIFEST_DIR}/manifest.json`;
+  for (const candidate of [path, DEFAULT_MANIFEST, legacyPath])
+    if (normalize(file).endsWith(sep + normalize(candidate))) return candidate;
+  return path;
 }
 
 /** Throws unless `file`, links followed, is inside `root`. */
@@ -1132,7 +1168,7 @@ export async function teamGitProblem(spec: string, cwd = tmpdir()): Promise<stri
 /**
  * Why a team manifest's source may not fetch `url`, or undefined when it may: an http or https
  * URL on another machine, by the rule `isLocalHost` applies to git. This holds for an index or an
- * npm registry a team manifest names, for every download either sends skillfleet to, and for
+ * npm registry a team manifest names, for every download either sends fleetrc to, and for
  * each redirect on the way.
  */
 export function teamUrlProblem(url: string): string | undefined {
@@ -1370,7 +1406,7 @@ export async function loadManifest(
 }
 
 /**
- * Reads, changes and writes back the root manifest's JSON, keeping fields skillfleet does not know.
+ * Reads, changes and writes back the root manifest's JSON, keeping fields fleetrc does not know.
  * Only the parts that change are rewritten, so the file keeps its layout; a file the text edit
  * can't follow is written out whole. A dry run checks that the changed manifest is valid and
  * writes nothing.
@@ -1388,7 +1424,7 @@ export function editManifest(
   if (dryRun) return;
   const notes: string[] = [];
   const edited = editJsonText(readFileSync(file, "utf8"), before, raw, notes);
-  for (const note of notes) process.stderr.write(`skillfleet: ${tildify(file)}: ${note}\n`);
+  for (const note of notes) process.stderr.write(`fleetrc: ${tildify(file)}: ${note}\n`);
   if (edited === undefined) {
     writeJson(file, raw);
     return;

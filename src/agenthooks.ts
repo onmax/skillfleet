@@ -1,5 +1,5 @@
-// `skillfleet hook install` and `hook remove`: skillfleet's entry in Claude Code's settings.json and
-// in Codex's hooks.json, which runs `skillfleet hook run <agent>` when a session starts, and on
+// `fleetrc hook install` and `hook remove`: fleetrc's entry in Claude Code's settings.json and
+// in Codex's hooks.json, which runs `fleetrc hook run <agent>` when a session starts, and on
 // nothing else. Both files take Claude Code's hook format:
 //   { "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "…" }] }], … } }
 // Codex reads $CODEX_HOME/hooks.json, which may hold only "description" and "hooks" (openai/codex,
@@ -26,12 +26,13 @@ import { dirname, join } from "node:path";
 import { isErrno, isRecord, JsonFileError, lstat, readJson } from "./fs.ts";
 import { HOOK_AGENTS, type HookAgent } from "./hook.ts";
 import { editJsonText } from "./jsonedit.ts";
+import { eitherName, LEGACY_DISABLED } from "./legacy.ts";
 import { claudeHome, tildify } from "./paths.ts";
 import { installedCli, launcherPath, linkedNode, stableNode } from "./selfinstall.ts";
 
 export { HOOK_AGENTS, type HookAgent };
 
-/** The events skillfleet's hook runs on. Older versions also ran on UserPromptSubmit. */
+/** The events fleetrc's hook runs on. Older versions also ran on UserPromptSubmit. */
 const EVENTS = ["SessionStart"] as const;
 
 export const AGENT_NAMES: Record<HookAgent, string> = {
@@ -137,26 +138,34 @@ export function hookHandler(
   };
 }
 
-/** A launcher path as skillfleet writes it: double-quoted (escapes allowed) or bare, ending in skillfleet. */
-const LAUNCHER = String.raw`(?:"(?:[^"\\]|\\.)*[\\/]skillfleet(?:\.cmd)?"|[^\s"'\`;&|<>()$]*[\\/]skillfleet(?:\.cmd)?)`;
+/**
+ * fleetrc's name in the commands it wrote, or the name it had before (legacy.ts), so the move from
+ * that name replaces its entries where they stand.
+ */
+const NAME = eitherName("fleetrc");
+
+/** A launcher path as fleetrc writes it: double-quoted (escapes allowed) or bare, ending in fleetrc. */
+const LAUNCHER = String.raw`(?:"(?:[^"\\]|\\.)*[\\/]${NAME}(?:\.cmd)?"|[^\s"'\`;&|<>()$]*[\\/]${NAME}(?:\.cmd)?)`;
 
 /**
- * The commands skillfleet writes, by this install or another one: `test -x <launcher> &&
+ * The commands fleetrc writes, by this install or another one: `test -x <launcher> &&
  * <launcher> hook run <agent> 2>/dev/null; true`, one launcher (any path, also `"$HOME/…"`) named
  * twice; on Windows the launcher (also `"%USERPROFILE%\…"`) with `hook run <agent>`. And, so they
  * are replaced, what earlier versions wrote: the launcher with `hook run <agent>` alone or with
- * `2>/dev/null || true`, and the documented prompt hook, `[npx] skillfleet hook prompt` or the
+ * `2>/dev/null || true`, and the documented prompt hook, `[npx] fleetrc hook prompt` or the
  * launcher with `hook prompt`, under any event, UserPromptSubmit included. Nothing else: a user's
- * command that only mentions them is not skillfleet's.
+ * command that only mentions them is not fleetrc's.
  */
 const OWN_COMMAND = new RegExp(
-  String.raw`^(?:test -x (${LAUNCHER}) && \1 hook run (?:claude-code|codex) 2>/dev/null; true|${LAUNCHER} hook run (?:claude-code|codex)(?: 2>/dev/null \|\| true)?|(?:npx (?:-y )?)?skillfleet hook prompt|${LAUNCHER} hook prompt)$`,
+  String.raw`^(?:test -x (${LAUNCHER}) && \1 hook run (?:claude-code|codex) 2>/dev/null; true|${LAUNCHER} hook run (?:claude-code|codex)(?: 2>/dev/null \|\| true)?|(?:npx (?:-y )?)?${NAME} hook prompt|${LAUNCHER} hook prompt)$`,
 );
 
-const DISABLED_POSIX = "exit 0 # skillfleet: disabled legacy hook";
-const DISABLED_WINDOWS = "exit /b 0 & rem skillfleet: disabled legacy hook";
+const DISABLED_POSIX = "exit 0 # fleetrc: disabled legacy hook";
+const DISABLED_WINDOWS = "exit /b 0 & rem fleetrc: disabled legacy hook";
 const isDisabledCommand = (command: unknown) =>
-  command === DISABLED_POSIX || command === DISABLED_WINDOWS;
+  command === DISABLED_POSIX ||
+  command === DISABLED_WINDOWS ||
+  (typeof command === "string" && LEGACY_DISABLED.includes(command));
 
 /**
  * A matcher group that runs on every event of its kind in `agent`: no matcher, or one that matches
@@ -168,7 +177,7 @@ const catchAll = (group: Record<string, unknown>, agent: HookAgent) =>
   group.matcher === "" ||
   group.matcher === "*";
 
-/** One of the no-ops skillfleet leaves in place of an old Codex entry. */
+/** One of the no-ops fleetrc leaves in place of an old Codex entry. */
 const isDisabled = (hook: unknown) =>
   isRecord(hook) &&
   hook.type === "command" &&
@@ -179,8 +188,8 @@ export const isOwnCommand = (command: unknown) =>
   typeof command === "string" && OWN_COMMAND.test(command.trim());
 
 /**
- * An entry skillfleet wrote: a command above, a disabled placeholder, or exec form, node with
- * skillfleet's installed copy (`…/skillfleet/app/cli.mjs`) and `hook run <agent>`.
+ * An entry fleetrc wrote: a command above, a disabled placeholder, or exec form, node with
+ * fleetrc's installed copy (`…/fleetrc/app/cli.mjs`) and `hook run <agent>`.
  */
 export function isOwnHandler(hook: unknown): boolean {
   if (!isRecord(hook)) return false;
@@ -191,14 +200,16 @@ export function isOwnHandler(hook: unknown): boolean {
   const args = hook.args;
   return (
     typeof hook.command === "string" &&
-    // node: any program in skillfleet's bin/node-dir (it keeps node's own name, which may be
+    // node: any program in fleetrc's bin/node-dir (it keeps node's own name, which may be
     // renamed, such as node-v24.exe), or any node by name.
-    (/[\\/]skillfleet[\\/]bin[\\/]node-dir[\\/][^\\/]+$/i.test(hook.command) ||
+    (new RegExp(String.raw`[\\/]${NAME}[\\/]bin[\\/]node-dir[\\/][^\\/]+$`, "i").test(
+      hook.command,
+    ) ||
       /^node(?:\.exe)?$/i.test(hook.command.split(/[\\/]/).at(-1)!)) &&
     Array.isArray(args) &&
     args.length === 4 &&
     typeof args[0] === "string" &&
-    /[\\/]skillfleet[\\/]app[\\/]cli\.mjs$/i.test(args[0]) &&
+    new RegExp(String.raw`[\\/]${NAME}[\\/]app[\\/]cli\.mjs$`, "i").test(args[0]) &&
     args[1] === "hook" &&
     args[2] === "run" &&
     (args[3] === "claude-code" || args[3] === "codex")
@@ -210,7 +221,7 @@ const sameHandler = (a: Record<string, unknown>, b: HookHandler) =>
 
 type Json = Record<string, unknown>;
 
-/** Removes skillfleet's handlers, leaving no-ops where removal would shift Codex approvals. */
+/** Removes fleetrc's handlers, leaving no-ops where removal would shift Codex approvals. */
 function withoutOwn(
   groups: unknown,
   preserveIndices = false,
@@ -241,7 +252,8 @@ function withoutOwn(
     const hooks = group.hooks.flatMap((hook: unknown, position: number) => {
       if (!isRecord(hook) || !isOwn(hook)) return [hook];
       if (keepGroup || position < lastOther) {
-        if (hook.type === disabled.type && sameHandler(hook, disabled)) return [hook];
+        // A placeholder stays as it is, the old name's too: Codex trusts it by its hash.
+        if (isDisabled(hook)) return [hook];
         changedGroup = true;
         return [disabled];
       }
@@ -250,13 +262,13 @@ function withoutOwn(
     });
     if (!changedGroup) return [group];
     changed = true;
-    // A group that held only skillfleet's handler goes with it.
+    // A group that held only fleetrc's handler goes with it.
     return hooks.length === 0 ? [] : [{ ...group, hooks }];
   });
   return { groups: kept, changed };
 }
 
-/** The events and handler entries that belong to skillfleet. */
+/** The events and handler entries that belong to fleetrc. */
 function ownHandlers(raw: unknown): { event: string; handler: Record<string, unknown> }[] {
   if (!isRecord(raw) || !isRecord(raw.hooks)) return [];
   return Object.entries(raw.hooks).flatMap(([event, groups]) =>
@@ -325,7 +337,7 @@ export function editHooksFile(
     } catch {
       return {
         changed: false,
-        error: `${tildify(file)} is a link to ${readlinkSync(file)}, which does not exist; skillfleet left it alone`,
+        error: `${tildify(file)} is a link to ${readlinkSync(file)}, which does not exist; fleetrc left it alone`,
       };
     }
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -348,7 +360,7 @@ export function editHooksFile(
     // The temp file is created with the target's mode, so a 0600 settings.json is never readable
     // by others, not even in its copy; the umask can only narrow the mode, which fchmod restores.
     const mode = snapshot === undefined ? undefined : statSync(target).mode & 0o7777;
-    const temp = `${target}.skillfleet-${process.pid}-${randomBytes(6).toString("hex")}.tmp`;
+    const temp = `${target}.fleetrc-${process.pid}-${randomBytes(6).toString("hex")}.tmp`;
     const fd = openSync(temp, "wx", mode ?? 0o600);
     try {
       if (mode !== undefined) fchmodSync(fd, mode);
@@ -368,7 +380,7 @@ export function editHooksFile(
   }
   return {
     changed: false,
-    error: `${tildify(file)} changed while skillfleet was editing it, so nothing was written; run the command again`,
+    error: `${tildify(file)} changed while fleetrc was editing it, so nothing was written; run the command again`,
   };
 }
 
@@ -398,8 +410,8 @@ function chosen(
 }
 
 /**
- * Puts `handler` in `raw`'s SessionStart, in place of any entry of skillfleet's; an event that
- * already holds it, once, is left alone. skillfleet's entries under any other event, such as the
+ * Puts `handler` in `raw`'s SessionStart, in place of any entry of fleetrc's; an event that
+ * already holds it, once, is left alone. fleetrc's entries under any other event, such as the
  * UserPromptSubmit older versions wrote, are removed or replaced with a no-op if removing them
  * would shift another Codex hook's indices and invalidate its approval.
  */
@@ -428,9 +440,10 @@ export function withHook(raw: Json, handler: HookHandler, agent: HookAgent) {
       catchAll(holder, agent)
     )
       continue;
-    if (agent === "codex" && Array.isArray(hooks[event])) {
-      // Codex keys a hook's approval to its place, so an older entry of skillfleet's is replaced
-      // where it stands, and any others become no-ops where a hook after them would move.
+    if (Array.isArray(hooks[event])) {
+      // Codex keys a hook's approval to its place, so an older entry of fleetrc's is replaced
+      // where it stands, and any others become no-ops where a hook after them would move. Claude
+      // Code's is replaced where it stands too, and its others removed.
       let placed = undefined as HookHandler | undefined;
       const groups = (hooks[event] as unknown[]).map((group: unknown) =>
         isRecord(group) && Array.isArray(group.hooks)
@@ -447,7 +460,7 @@ export function withHook(raw: Json, handler: HookHandler, agent: HookAgent) {
           : group,
       );
       if (placed) {
-        hooks[event] = withoutOwn(groups, true, placed).groups;
+        hooks[event] = withoutOwn(groups, agent === "codex", placed).groups;
         continue;
       }
     }
@@ -457,7 +470,7 @@ export function withHook(raw: Json, handler: HookHandler, agent: HookAgent) {
 }
 
 /**
- * Takes every entry of skillfleet's out of `raw`, and the groups and events left empty by it; in
+ * Takes every entry of fleetrc's out of `raw`, and the groups and events left empty by it; in
  * Codex, one a hook of the user's follows becomes a no-op instead.
  */
 export function withoutHooks(raw: Json, agent?: HookAgent) {
@@ -473,7 +486,7 @@ export function withoutHooks(raw: Json, agent?: HookAgent) {
 }
 
 /**
- * Adds skillfleet's hook to each agent's file, replacing an older entry of skillfleet's. `node` is
+ * Adds fleetrc's hook to each agent's file, replacing an older entry of fleetrc's. `node` is
  * the node the launcher runs (Claude Code on Windows runs it through bin/'s node link).
  */
 export function installHooks(
@@ -491,7 +504,7 @@ export function installHooks(
   });
 }
 
-/** Takes skillfleet's hook out of each agent's file, leaving every other hook and field. */
+/** Takes fleetrc's hook out of each agent's file, leaving every other hook and field. */
 export function removeHooks(
   agents: readonly HookAgent[] | undefined,
   options: { dryRun?: boolean } = {},
@@ -522,7 +535,7 @@ const isPromptHook = (handler: Record<string, unknown>) =>
   typeof handler.command === "string" && handler.command.trim().endsWith(" hook prompt");
 
 /**
- * The agents whose hooks file runs `skillfleet hook run` on SessionStart: what starts syncs. An
+ * The agents whose hooks file runs `fleetrc hook run` on SessionStart: what starts syncs. An
  * entry under another event, an approval placeholder, or the old `hook prompt` starts none.
  */
 export function installedHooks(): { agent: HookAgent; file: string }[] {
@@ -543,7 +556,7 @@ export function promptOnlyHooks(): { agent: HookAgent; note: string }[] {
       ? [
           {
             agent,
-            note: `${tildify(file)} holds the old \`skillfleet hook prompt\` entry, which starts no sync; \`skillfleet hook install ${agent}\` replaces it with the session hook`,
+            note: `${tildify(file)} holds the old \`fleetrc hook prompt\` entry, which starts no sync; \`fleetrc hook install ${agent}\` replaces it with the session hook`,
           },
         ]
       : [],
@@ -563,10 +576,10 @@ export function formatHookChanges(
     if (change.skipped) return `${name}: skipped, ${change.skipped}`;
     if (action === "remove")
       return change.changed
-        ? `${name}: ${dryRun ? "would remove" : "removed"} skillfleet's hook from ${where}`
-        : `${name}: no skillfleet hook in ${where}`;
+        ? `${name}: ${dryRun ? "would remove" : "removed"} fleetrc's hook from ${where}`
+        : `${name}: no fleetrc hook in ${where}`;
     if (!change.changed) return `${name}: hook already in ${where}`;
-    const done = `${name}: ${dryRun ? "would add" : "added"} skillfleet's hook to ${where}, run when a session starts`;
+    const done = `${name}: ${dryRun ? "would add" : "added"} fleetrc's hook to ${where}, run when a session starts`;
     // Codex runs a new hook only once the user trusts it.
     return change.agent === "codex"
       ? `${done}; Codex asks you to trust a new hook: open /hooks in Codex and approve it`
@@ -586,5 +599,5 @@ export function describeTrigger(hooks: readonly { agent: HookAgent }[], timer: b
   if (hooks.length > 0 && timer) return `the session hooks of ${agents}, and the timer`;
   if (hooks.length > 0) return `the session hooks of ${agents}`;
   if (timer) return "the timer";
-  return "nothing starts a sync on this machine; run `skillfleet hook install` where Claude Code or Codex runs, or `skillfleet timer install` on a machine where no agent runs";
+  return "nothing starts a sync on this machine; run `fleetrc hook install` where Claude Code or Codex runs, or `fleetrc timer install` on a machine where no agent runs";
 }

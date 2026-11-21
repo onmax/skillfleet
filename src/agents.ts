@@ -23,7 +23,7 @@ const readsSharedDir = (agent: AgentInfo) =>
 /**
  * The global skills folders of the manifest's agents, one entry per folder. `all` means every
  * agent `skills` detects on this machine. Codex reads `~/.agents/skills` (its folder in `skills`)
- * and the deprecated `~/.codex/skills`; skillfleet only writes the first.
+ * and the deprecated `~/.codex/skills`; fleetrc only writes the first.
  *
  * When ~/.agents/skills is a target, a universal agent (Gemini CLI, OpenCode, Copilot, Cursor, …)
  * reads its skills there and its own folder is left out, as `npx skills add -g` does: Gemini CLI
@@ -77,7 +77,7 @@ const isLink = (path: string) => {
 
 /**
  * Agent folders (every supported agent's, and Codex's old one) that are links to another agent
- * folder, mapped to that folder as skillfleet names it. `~/.codex/skills -> ~/.agents/skills` or
+ * folder, mapped to that folder as fleetrc names it. `~/.codex/skills -> ~/.agents/skills` or
  * `~/.claude/skills -> ~/.agents/skills` make two agents read one folder; a link to a folder no
  * agent owns (a dotfiles repository) is not in the map.
  */
@@ -105,7 +105,7 @@ export function agentFolders(): Map<string, string> {
 export const aliasOf = (dir: string): string | undefined => agentFolders().get(resolve(dir));
 
 /**
- * Global skills folders of supported agents that are not targets now. skillfleet may have linked
+ * Global skills folders of supported agents that are not targets now. fleetrc may have linked
  * skills there before (an agent that left the manifest, or a universal agent's own folder before
  * ~/.agents/skills replaced it), so sync removes the links it recorded there.
  */
@@ -117,7 +117,7 @@ export function formerTargets(targets: readonly AgentTarget[]): string[] {
   return [...dirs].filter((dir) => !current.has(dir)).sort();
 }
 
-/** Codex's deprecated folder, which skillfleet empties during `init` instead of writing to. */
+/** Codex's deprecated folder, which fleetrc empties during `init` instead of writing to. */
 export const codexLegacyDir = () =>
   join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "skills");
 
@@ -128,11 +128,11 @@ export interface AgentRow {
   dir?: string;
   /** Its folder is in this home, so `"agents": "all"` includes it. */
   detected: boolean;
-  /** The folder skillfleet links its skills into under the manifest's `agents`, when it does. */
+  /** The folder fleetrc links its skills into under the manifest's `agents`, when it does. */
   linkedInto?: string;
 }
 
-/** Every agent id `skills` knows, for `skillfleet agents`. `agents` is the manifest's choice, when there is one. */
+/** Every agent id `skills` knows, for `fleetrc agents`. `agents` is the manifest's choice, when there is one. */
 export async function agentRows(agents?: Manifest["agents"]): Promise<AgentRow[]> {
   const detected = new Set(
     (await detectAgents({ cwd: homedir(), config: { telemetry: false } })).agents.map(

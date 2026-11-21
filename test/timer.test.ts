@@ -36,13 +36,13 @@ describe("timer", () => {
       timer: { cron: "*/15 * * * *", timeZone: "Europe/Madrid" },
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-    // init installs the copy even without the timer, so `skillfleet` runs from a new shell.
+    // init installs the copy even without the timer, so `fleetrc` runs from a new shell.
     rmSync(join(m.stateDir, "app"), { recursive: true });
     const dry = await m.run("timer", "install", "--dry-run");
     const app = join(m.stateDir, "app", "cli.mjs");
     expect(dry.code, dry.stderr).toBe(0);
     expect(dry.stdout).toBe(
-      `timer skillfleet-sync: \`${stableNode({ env: m.env, home: m.home })} ${app} sync\` on "*/15 * * * *" (Europe/Madrid)\n` +
+      `timer fleetrc-sync: \`${stableNode({ env: m.env, home: m.home })} ${app} sync\` on "*/15 * * * *" (Europe/Madrid)\n` +
         `would install ${kind}\n`,
     );
     expect(existsSync(app)).toBe(false);
@@ -62,7 +62,7 @@ describe("timer", () => {
     expect(spec.timeZone).toBe("local");
   });
 
-  it("15c. init --dry-run neither installs a timer nor copies skillfleet", async () => {
+  it("15c. init --dry-run neither installs a timer nor copies fleetrc", async () => {
     const m = machine();
     const manifest = m.manifest({
       agents: ["claude-code"],
@@ -79,7 +79,7 @@ describe("timer", () => {
     const m = machine({ scheduler: "empty" });
     const install = await m.run("self-install");
     expect(install.code, install.stderr).toBe(0);
-    const launcher = join(m.stateDir, "bin", "skillfleet");
+    const launcher = join(m.stateDir, "bin", "fleetrc");
     const text = read(launcher);
     expect(text).toBe(
       `#!/bin/sh\nexec "${stableNode({ env: m.env, home: m.home }).replace(/\\/g, "/")}" "${join(m.stateDir, "app", "cli.mjs").replace(/\\/g, "/")}" "$@"\n`,
@@ -123,9 +123,9 @@ describe("timer", () => {
       expect(init.code, said).toBe(0);
       expect(said).toContain("this machine has no systemd user manager");
       expect(said).toMatch(
-        /crontab -e.*\*\/30 \* \* \* \* mkdir -p '[^']*' && '.*\/bin\/skillfleet' sync >> /,
+        /crontab -e.*\*\/30 \* \* \* \* mkdir -p '[^']*' && '.*\/bin\/fleetrc' sync >> /,
       );
-      expect(said).toContain("skillfleet hook install");
+      expect(said).toContain("fleetrc hook install");
       expect(said).not.toContain("ENOENT");
       // No timer went in, so status and doctor report the hooks, and the timer commands say why.
       const status = await m.run("status");
@@ -148,7 +148,7 @@ describe("timer", () => {
   it.skipIf(process.platform !== "linux")(
     "R2-11. a dry run tells a machine without systemctl, or not booted with systemd, from one with it",
     () => {
-      const root = mkdtempSync(join(tmpdir(), "skillfleet-systemd-"));
+      const root = mkdtempSync(join(tmpdir(), "fleetrc-systemd-"));
       try {
         const bin = join(root, "bin");
         const booted = join(root, "run-systemd-system");
@@ -219,8 +219,8 @@ describe("timer", () => {
     const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
     const dry = await m.run("init", manifest, "--dry-run");
     expect(dry.code, dry.stderr).toBe(0);
-    expect(dry.stdout).toMatch(/would install .*skillfleet.*, the copy new shells, the hooks/);
-    expect(dry.stdout).toContain("Claude Code: would add skillfleet's hook");
+    expect(dry.stdout).toMatch(/would install .*fleetrc.*, the copy new shells, the hooks/);
+    expect(dry.stdout).toContain("Claude Code: would add fleetrc's hook");
     expect(dry.stdout).not.toContain(`would install ${kind}`);
     const timer = await m.run("init", manifest, "--dry-run", "--timer");
     expect(timer.stdout).toContain(`would install ${kind}`);
@@ -245,7 +245,7 @@ describe("timer", () => {
       const b = node("node-b");
       const using = (n: { dir: string }) => ({ PATH: [n.dir, shim].join(delimiter) });
       const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
-      const service = m.at(".config/systemd/user/skillfleet-sync.service");
+      const service = m.at(".config/systemd/user/fleetrc-sync.service");
 
       const init = await m.runWith({ env: using(a) }, "init", manifest, "--timer");
       expect(init.code, init.stdout + init.stderr).toBe(0);
@@ -272,7 +272,7 @@ describe("timer", () => {
       const split = await m.runWith({ env: using(b) }, "doctor");
       expect(split.stdout).toMatch(
         new RegExp(
-          `^FAIL node: the timer \\(.*skillfleet-sync.service\\) runs ${a.node}, which is gone.*npx skillfleet@latest self-install`,
+          `^FAIL node: the timer \\(.*fleetrc-sync.service\\) runs ${a.node}, which is gone.*npx fleetrc@latest self-install`,
           "m",
         ),
       );
@@ -286,7 +286,7 @@ describe("timer", () => {
       const m = machine();
       const bin = join(m.root, "own-bin");
       mkdirSync(bin);
-      const other = "/Users/someone/Library/LaunchAgents/skillfleet-sync.plist";
+      const other = "/Users/someone/Library/LaunchAgents/fleetrc-sync.plist";
       writeFileSync(
         join(bin, "launchctl"),
         `#!/bin/sh\ncase "$1" in\n  print) printf '%s = {\\n\\tpath = ${other}\\n\\tstate = not running\\n}\\n' "$2"; exit 0 ;;\n  getenv) exit 0 ;;\nesac\nexit 1\n`,
@@ -298,10 +298,7 @@ describe("timer", () => {
       // Without the timer, neither asks launchd.
       expect((await m.runWith({ env }, "doctor")).stdout).not.toMatch(/^\w+ +timer:/m);
       // A machine where `timer install` ran once.
-      writeFileSync(
-        m.at(".config/skillfleet/config.json"),
-        JSON.stringify({ manifest, timer: true }),
-      );
+      writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest, timer: true }));
       const doctor = await m.runWith({ env }, "doctor");
       expect(doctor.stdout).toMatch(/^FAIL timer: .*someone/m);
       const status = await m.runWith({ env }, "status");

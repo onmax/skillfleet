@@ -1,6 +1,6 @@
-// Round four of trying to break skillfleet, against fix/round3 (bdb972b): the user's journey from the
+// Round four of trying to break fleetrc, against fix/round3 (bdb972b): the user's journey from the
 // README, and what rounds three and four added (lock identity, discovery containment, the team
-// transport allowlist, the index download wrapper, refused names). Each test asserts what skillfleet
+// transport allowlist, the index download wrapper, refused names). Each test asserts what fleetrc
 // should do; a failing test is a break still open. Every run uses the fixture's temporary HOME, and
 // every scheduler call goes to the fixture's fake.
 import { execFileSync, spawn } from "node:child_process";
@@ -121,7 +121,7 @@ describe("the user's journey", () => {
       const said = run.stdout + run.stderr;
       const log = said.match(/sync >> '([^']+)' 2>&1/)?.[1];
       expect(log, said).toBeDefined();
-      // `>> file` in cron's shell fails before skillfleet starts when the folder is missing.
+      // `>> file` in cron's shell fails before fleetrc starts when the folder is missing.
       expect(existsSync(dirname(log!)), `${dirname(log!)} does not exist`).toBe(true);
       // The line itself makes the folder, for when it goes (a cleaned state folder): run it as cron would.
       const line = said.match(/\*\/30 \* \* \* \* (.*? 2>&1)/)?.[1];
@@ -194,7 +194,7 @@ describe("the user's journey", () => {
     // status keeps saying it until the fork is merged.
     const status = await m.run("status");
     expect(status.stdout).toContain(
-      "team-style: upstream changed since you forked it; `skillfleet diff team-style` / `skillfleet merge team-style`",
+      "team-style: upstream changed since you forked it; `fleetrc diff team-style` / `fleetrc merge team-style`",
     );
     const merged = await m.run("merge", "team-style");
     expect(merged.code, merged.stdout + merged.stderr).toBe(0);
@@ -206,7 +206,7 @@ describe("the user's journey", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool", "other"));
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         sources: [{ id: "vendor", git: vendor.https }],
       }),
     });
@@ -215,7 +215,7 @@ describe("the user's journey", () => {
     expect(names(m.at(".claude", "skills"))).toEqual(["other", "tool"]);
 
     const skill = await m.run("remove", "tool");
-    // It said: "tool comes from vendor in ~/.local/state/skillfleet/cache/manifests/<hash>/.skillfleet/manifest.json;
+    // It said: "tool comes from vendor in ~/.local/state/fleetrc/cache/manifests/<hash>/.fleetrc/manifest.json;
     // exclude it there", a cache copy the next sync overwrites.
     expect(skill.stdout + skill.stderr).not.toMatch(/cache[\\/]manifests/);
 
@@ -240,14 +240,14 @@ describe("the user's journey", () => {
     const m = machine({ scheduler: "empty" });
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const me = remote(m, "me", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "vendor", git: vendor.url }],
       }),
     });
     await init(m, me.url);
     me.commit({
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         timer: { cron: "0 * * * *" },
         sources: [{ id: "vendor", git: vendor.url }],
@@ -261,12 +261,12 @@ describe("the user's journey", () => {
     writeFileSync(
       join(m.stateDir, "timer.json"),
       JSON.stringify({
-        spec: { name: "skillfleet-sync", cron: "*/30 * * * *", timeZone: "local" },
+        spec: { name: "fleetrc-sync", cron: "*/30 * * * *", timeZone: "local" },
         files: [],
       }),
     );
     const note =
-      'the manifest\'s timer is now "0 * * * *", but the installed timer runs on "*/30 * * * *"; run `skillfleet timer install` to apply it';
+      'the manifest\'s timer is now "0 * * * *", but the installed timer runs on "*/30 * * * *"; run `fleetrc timer install` to apply it';
     expect((await m.json("sync")).warnings).toContain(note);
     expect((await m.json("sync")).warnings).not.toContain(note);
   });
@@ -275,7 +275,7 @@ describe("the user's journey", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const extra = remote(m, "extra", skills("skills/", "lint"));
-    const file = join(m.root, "manifest", ".skillfleet", "manifest.json");
+    const file = join(m.root, "manifest", ".fleetrc", "manifest.json");
     mkdirSync(dirname(file), { recursive: true });
     const text = `{\n  "agents": ["claude-code"],\n  "sources": [{ "id": "vendor", "git": ${JSON.stringify(vendor.url)} }]\n}\n`;
     writeFileSync(file, text);
@@ -524,7 +524,7 @@ describe("discovery containment and refused names", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         sources: [{ id: "vendor", git: vendor.https, followLinks: true }],
       }),
     });
@@ -567,14 +567,14 @@ describe("the team manifest's transport allowlist", () => {
     // The team's Gitea over plain http and a git daemon, which the test's git server stands in for.
     appendFileSync(
       join(m.root, "gitconfig"),
-      `[url "${vendor.served}"]\n\tinsteadOf = http://gitea.skillfleet.test/team/vendor.git\n` +
-        `[url "${other.served}"]\n\tinsteadOf = git://git.skillfleet.test/other.git\n`,
+      `[url "${vendor.served}"]\n\tinsteadOf = http://gitea.fleetrc.test/team/vendor.git\n` +
+        `[url "${other.served}"]\n\tinsteadOf = git://git.fleetrc.test/other.git\n`,
     );
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         sources: [
-          { id: "vendor", git: "http://gitea.skillfleet.test/team/vendor.git" },
-          { id: "other", git: "git://git.skillfleet.test/other.git" },
+          { id: "vendor", git: "http://gitea.fleetrc.test/team/vendor.git" },
+          { id: "other", git: "git://git.fleetrc.test/other.git" },
         ],
       }),
     });

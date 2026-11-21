@@ -38,7 +38,7 @@ const run = spawnSync("sh", ["-c", command], { stdio: "inherit" });
 process.exit(run.status ?? 1);`,
   );
   return {
-    env: { SKILLFLEET_SSH: script },
+    env: { FLEETRC_SSH: script },
     calls: () =>
       existsSync(log)
         ? readFileSync(log, "utf8")
@@ -50,20 +50,20 @@ process.exit(run.status ?? 1);`,
 }
 
 describe("linux environments", () => {
-  // L1: `npx skillfleet init owner/repo` keeps the manifest in a cached clone; `add` edits that clone
+  // L1: `npx fleetrc init owner/repo` keeps the manifest in a cached clone; `add` edits that clone
   // and the next fetch resets it, so the source is gone while `add` printed "added".
   it("L1. add on a manifest in a git repository keeps the source past the next sync", async () => {
     const m = machine();
     const team = remote(m, "team", skills("skills/", "team-a"));
     const extra = remote(m, "extra", skills("skills/", "extra-a"));
     const manifests = remote(m, "manifests", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "team", git: team.url }],
       }),
     });
     expect(
-      (await m.run("init", `${manifests.url}//.skillfleet/manifest.json`, "--no-hooks")).code,
+      (await m.run("init", `${manifests.url}//.fleetrc/manifest.json`, "--no-hooks")).code,
     ).toBe(0);
     const added = await m.run("add", extra.url);
     await m.run("sync");
@@ -156,10 +156,7 @@ describe("linux environments", () => {
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
     // A machine that expects a timer, as one where `timer install` ran once: doctor fails without
     // it. Without the timer it skips the check (test/cli-contract.test.ts).
-    writeFileSync(
-      m.at(".config/skillfleet/config.json"),
-      JSON.stringify({ manifest, timer: true }),
-    );
+    writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest, timer: true }));
     const checks = await m.json<{ name: string; ok: boolean }[]>("doctor");
     const timer = checks.find((check) => /timer/i.test(check.name));
     expect(timer, JSON.stringify(checks)).toMatchObject({ ok: false });
@@ -181,11 +178,8 @@ describe("linux environments", () => {
       chmodSync(loginctl, 0o755);
       // A machine that has the timer: linger matters only to it.
       const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
-      mkdirSync(m.at(".config/skillfleet"), { recursive: true });
-      writeFileSync(
-        m.at(".config/skillfleet/config.json"),
-        JSON.stringify({ manifest, timer: true }),
-      );
+      mkdirSync(m.at(".config/fleetrc"), { recursive: true });
+      writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest, timer: true }));
       const checks = await m.runWith({ env: { PATH: `${bin}:${m.env.PATH}` } }, "doctor", "--json");
       const linger = (JSON.parse(checks.stdout) as { name: string; ok: boolean }[]).find(
         (check) => check.name === "systemd linger",
@@ -206,7 +200,7 @@ describe("linux environments", () => {
       XDG_CONFIG_HOME: join(home, ".config"),
     };
     expect((await m.runWith({ env }, "self-install")).code).toBe(0);
-    const launcher = join(home, ".local", "state", "skillfleet", "bin", "skillfleet");
+    const launcher = join(home, ".local", "state", "fleetrc", "bin", "fleetrc");
     const { execFileSync } = await import("node:child_process");
     const out = execFileSync(launcher, ["--version"], { env: { ...m.env, ...env } })
       .toString()
@@ -214,7 +208,7 @@ describe("linux environments", () => {
     expect(out).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  // L10: the README's first command, `npx skillfleet init onmax/skills`, looks for a file named
+  // L10: the README's first command, `npx fleetrc init onmax/skills`, looks for a file named
   // `onmax/skills` in the current folder: "<cwd>/onmax/skills: no such manifest".
   it("L10. init <owner>/<repo> reads the manifest from that GitHub repository", async () => {
     const m = machine();
@@ -224,21 +218,21 @@ describe("linux environments", () => {
     expect(out).toContain("github.com/some-owner/some-skills");
   });
 
-  // L12: after `npx skillfleet init`, the README's next command is `skillfleet status`, but
-  // nothing puts `skillfleet` on PATH; the copy sits in ~/.local/state/skillfleet/bin.
+  // L12: after `npx fleetrc init`, the README's next command is `fleetrc status`, but
+  // nothing puts `fleetrc` on PATH; the copy sits in ~/.local/state/fleetrc/bin.
   // Without the timer: the command has to work without it too, and a test that installs the timer
   // installs it in the real user's systemd, whatever HOME the test sets.
-  it.skipIf(isWindows)("L12. init leaves a `skillfleet` command the user can run", async () => {
+  it.skipIf(isWindows)("L12. init leaves a `fleetrc` command the user can run", async () => {
     const m = machine();
     const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
     const init = await m.run("init", manifest, "--no-hooks");
-    const onPath = existsSync(m.at(".local/bin/skillfleet"));
+    const onPath = existsSync(m.at(".local/bin/fleetrc"));
     expect(onPath || /PATH/.test(init.stdout), init.stdout).toBe(true);
   });
 
-  // L14: a reachable host with node but without skillfleet falls back to `npx -y skillfleet`; the
+  // L14: a reachable host with node but without fleetrc falls back to `npx -y fleetrc`; the
   // error is the last three lines of npm's log (a 404 today, "no manifest yet" once published).
-  it.skipIf(isWindows)("L14. fleet sync says a host has no skillfleet installed", async () => {
+  it.skipIf(isWindows)("L14. fleet sync says a host has no fleetrc installed", async () => {
     const m = machine();
     const manifest = m.manifest({ agents: ["claude-code"], sources: [], fleet: ["localhost"] });
     const { env } = recordingSsh(m);
@@ -253,7 +247,7 @@ describe("linux environments", () => {
       "--json",
     );
     const [result] = JSON.parse(sync.stdout) as { reachable: boolean; error?: string }[];
-    expect(result!.error).toMatch(/skillfleet is not installed|not installed on/);
+    expect(result!.error).toMatch(/fleetrc is not installed|not installed on/);
   });
 
   // L9: without git, a git source fails with "spawn git ENOENT" (printed twice, once with a

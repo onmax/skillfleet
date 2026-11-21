@@ -1,7 +1,7 @@
 #!/bin/sh
 # The user scenario, run inside a container (or a throwaway HOME) against the packed tarball.
 #
-#   SF_TGZ=/pkg/skillfleet.tgz sh scenario.sh
+#   SF_TGZ=/pkg/fleetrc.tgz sh scenario.sh
 #
 # Environment:
 #   SF_TGZ      the packed tarball (required)
@@ -30,8 +30,8 @@ export HOME="$SF_HOME"
 unset XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_DATA_HOME CLAUDE_CONFIG_DIR CODEX_HOME
 export DO_NOT_TRACK=1 NO_COLOR=1 npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false
 export GIT_CONFIG_GLOBAL="$SF_HOME/.gitconfig" GIT_CONFIG_NOSYSTEM=1
-STATE="$HOME/.local/state/skillfleet"
-SF="$STATE/bin/skillfleet"
+STATE="$HOME/.local/state/fleetrc"
+SF="$STATE/bin/fleetrc"
 LOG="${SF_LOG:-$WORK/logs}"
 mkdir -p "$LOG" "$SF_SRV"
 
@@ -69,7 +69,7 @@ EOF
 
 echo "ENV node=$(node -v) git=$(git --version 2>/dev/null || echo none) home=$HOME runner=$SF_RUNNER uid=$(id -u)"
 
-# Agents skillfleet should detect: Claude Code, Codex and Gemini CLI.
+# Agents fleetrc should detect: Claude Code, Codex and Gemini CLI.
 mkdir -p "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini"
 
 # --- the remotes ---------------------------------------------------------------------------------
@@ -99,8 +99,8 @@ if [ "$HAVE_GIT" = 1 ]; then
   skill_md extra-a >"$SF_SRV/work/extra/skills/extra-a/SKILL.md"
   push extra init
   bare manifest
-  mkdir -p "$SF_SRV/work/manifest/.skillfleet"
-  cat >"$SF_SRV/work/manifest/.skillfleet/manifest.json" <<EOF
+  mkdir -p "$SF_SRV/work/manifest/.fleetrc"
+  cat >"$SF_SRV/work/manifest/.fleetrc/manifest.json" <<EOF
 {
   "agents": "all",
   "sources": [
@@ -115,9 +115,9 @@ MANIFEST="$SF_SRV/manifest.git"
 if [ "$HAVE_GIT" = 0 ]; then
   # No git: a plain manifest file with a local source, and a git source that must fail clearly.
   rm -rf "$SF_SRV"
-  mkdir -p "$SF_SRV/local-skills/loc-a" "$SF_SRV/manifest/.skillfleet"
+  mkdir -p "$SF_SRV/local-skills/loc-a" "$SF_SRV/manifest/.fleetrc"
   skill_md loc-a >"$SF_SRV/local-skills/loc-a/SKILL.md"
-  cat >"$SF_SRV/manifest/.skillfleet/manifest.json" <<JSON
+  cat >"$SF_SRV/manifest/.fleetrc/manifest.json" <<JSON
 {
   "agents": "all",
   "sources": [
@@ -128,7 +128,7 @@ if [ "$HAVE_GIT" = 0 ]; then
 JSON
   MANIFEST="$SF_SRV/manifest"
 fi
-# A skill the user made by hand before skillfleet: init adopts it into the clone it makes first.
+# A skill the user made by hand before fleetrc: init adopts it into the clone it makes first.
 if [ "$HAVE_GIT" = 1 ]; then
   mkdir -p "$HOME/.claude/skills/handmade"
   skill_md handmade >"$HOME/.claude/skills/handmade/SKILL.md"
@@ -139,9 +139,9 @@ if [ -n "${SF_RO:-}" ]; then mkdir -p "$HOME/$SF_RO" && chmod 555 "$HOME/$SF_RO"
 # --- install and init ----------------------------------------------------------------------------
 init_cmd() {
   case "$SF_RUNNER" in
-    npx) npx -y --package "$SF_TGZ" -- skillfleet "$@" ;;
-    pnpm-dlx) pnpm dlx --package "$SF_TGZ" skillfleet "$@" ;;
-    global) skillfleet "$@" ;;
+    npx) npx -y --package "$SF_TGZ" -- fleetrc "$@" ;;
+    pnpm-dlx) pnpm dlx --package "$SF_TGZ" fleetrc "$@" ;;
+    global) fleetrc "$@" ;;
   esac
 }
 if [ "$SF_RUNNER" = global ]; then
@@ -172,7 +172,7 @@ if ! skip init; then
   fi
 fi
 
-# Every agent folder skillfleet should have written. Gemini CLI reads ~/.agents/skills, which Codex
+# Every agent folder fleetrc should have written. Gemini CLI reads ~/.agents/skills, which Codex
 # also reads, so its own folder gets no links: Gemini warns about a skill it finds in both.
 check_linked() { # check_linked <step> <skill>...
   s="$1"
@@ -206,10 +206,10 @@ fi
 
 # The launcher init writes, and that it runs on its own.
 if [ -x "$SF" ]; then ok launcher; else bad launcher "$SF missing after init"; fi
-if command -v skillfleet >/dev/null 2>&1 && [ "$SF_RUNNER" != global ]; then
-  echo "NOTE skillfleet is on PATH after init: $(command -v skillfleet)"
+if command -v fleetrc >/dev/null 2>&1 && [ "$SF_RUNNER" != global ]; then
+  echo "NOTE fleetrc is on PATH after init: $(command -v fleetrc)"
 elif [ "$SF_RUNNER" != global ]; then
-  echo "NOTE skillfleet is not on PATH after init; the README's \`skillfleet status\` needs $SF"
+  echo "NOTE fleetrc is not on PATH after init; the README's \`fleetrc status\` needs $SF"
 fi
 
 # The npx cache can go; the copy keeps working.
@@ -234,7 +234,7 @@ if [ "$HAVE_GIT" = 1 ]; then
     bad add-remote-refused "exit $code"
     show add
   fi
-  cat >"$SF_SRV/work/manifest/.skillfleet/manifest.json" <<EOF
+  cat >"$SF_SRV/work/manifest/.fleetrc/manifest.json" <<EOF
 {
   "agents": "all",
   "sources": [

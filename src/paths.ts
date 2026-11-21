@@ -26,13 +26,25 @@ export function xdgDir(name: "XDG_CONFIG_HOME" | "XDG_STATE_HOME"): string | und
   return value && isAbsolute(value) ? value : undefined;
 }
 
+/** Folders read in place of this install's for the rest of the run; see `readPlacesFrom`. */
+let places: { state: string; config: string } | undefined;
+
+/**
+ * Reads the state and config folders of `from` for the rest of this run: a dry run of the move
+ * from the old name (migrate.ts), which writes nothing, still shows what a sync there would do.
+ */
+export function readPlacesFrom(from: { state: string; config: string }) {
+  places = from;
+}
+
 /** Where `config.json` lives: XDG config, else %APPDATA% on Windows, else ~/.config. */
 export function configDir(): string {
+  if (places) return places.config;
   const env = process.env;
   const xdg = xdgDir("XDG_CONFIG_HOME");
-  if (xdg) return join(xdg, "skillfleet");
-  if (process.platform === "win32" && env.APPDATA) return join(env.APPDATA, "skillfleet");
-  return join(homedir(), ".config", "skillfleet");
+  if (xdg) return join(xdg, "fleetrc");
+  if (process.platform === "win32" && env.APPDATA) return join(env.APPDATA, "fleetrc");
+  return join(homedir(), ".config", "fleetrc");
 }
 
 function installedStateDir(): string | undefined {
@@ -48,16 +60,17 @@ let windowsInstalledState: string | undefined;
  * platform default. The Windows installed choice stays fixed for the invocation.
  */
 export function stateDir(): string {
+  if (places) return places.state;
   const xdg = xdgDir("XDG_STATE_HOME");
-  if (xdg) return join(xdg, "skillfleet");
+  if (xdg) return join(xdg, "fleetrc");
   const installed = installedStateDir();
   const appData = process.platform === "win32" && process.env.LOCALAPPDATA;
   if (appData) {
-    const local = join(appData, "skillfleet");
+    const local = join(appData, "fleetrc");
     if (!installed || installed === local) return local;
     return (windowsInstalledState ??= existsSync(join(local, "state.json")) ? local : installed);
   }
-  return installed ?? join(homedir(), ".local", "state", "skillfleet");
+  return installed ?? join(homedir(), ".local", "state", "fleetrc");
 }
 
 export const paths = {
@@ -83,11 +96,11 @@ export const paths = {
   hookEnv: () => join(stateDir(), "hook-env.json"),
 };
 
-/** The variables that place skillfleet's config and state folders (paths.ts). */
+/** The variables that place fleetrc's config and state folders (paths.ts). */
 const PLACES = ["XDG_CONFIG_HOME", "XDG_STATE_HOME", "APPDATA", "LOCALAPPDATA"] as const;
 
 /**
- * Where skillfleet was installed, for an agent whose environment lacks the installing shell's
+ * Where fleetrc was installed, for an agent whose environment lacks the installing shell's
  * XDG_CONFIG_HOME or XDG_STATE_HOME. Hooks and the launcher run the installed copy, `<state>/app/cli.mjs`, so
  * its own path names the state folder; the hook-env.json `hook install` saved there has the
  * variables that place the config and state folders, which this process takes before it looks.

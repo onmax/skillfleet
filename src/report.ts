@@ -12,7 +12,7 @@ export interface HookRun {
 export interface Report {
   version: 1;
   host: string;
-  skillfleet: string;
+  fleetrc: string;
   manifest: string;
   startedAt: string;
   finishedAt: string;
@@ -56,7 +56,7 @@ export function formatReport(report: Report): string {
   const verb = report.dryRun ? "would link" : "linked";
   const folders = report.targets.filter((target) => !target.skipped && !target.former).length;
   lines.push(
-    `skillfleet: ${verb} ${report.skills.total} skills into ${folders} folder${folders === 1 ? "" : "s"}${report.offline ? " (offline)" : ""}`,
+    `fleetrc: ${verb} ${report.skills.total} skills into ${folders} folder${folders === 1 ? "" : "s"}${report.offline ? " (offline)" : ""}`,
   );
   if (report.skills.added.length) lines.push(`  + added: ${list(report.skills.added)}`);
   if (report.skills.updated.length) lines.push(`  ~ updated: ${list(report.skills.updated)}`);
@@ -77,19 +77,19 @@ export function formatReport(report: Report): string {
   }
   for (const [source, skills] of review)
     lines.push(
-      `  review ${source}: updates for ${list(skills)}; see \`skillfleet diff <skill>\`, apply with \`skillfleet update ${source}\``,
+      `  review ${source}: updates for ${list(skills)}; see \`fleetrc diff <skill>\`, apply with \`fleetrc update ${source}\``,
     );
   for (const pending of report.pending)
     if (pending.reason === "fork")
       lines.push(
-        `  fork ${pending.skill}: ${pending.source} changed it since you forked it (${list(pending.files)}); see \`skillfleet diff ${pending.skill}\`, merge with \`skillfleet merge ${pending.skill}\``,
+        `  fork ${pending.skill}: ${pending.source} changed it since you forked it (${list(pending.files)}); see \`fleetrc diff ${pending.skill}\`, merge with \`fleetrc merge ${pending.skill}\``,
       );
   for (const edited of report.edited) {
     const behind = report.pending.some(
       (pending) => pending.skill === edited.skill && pending.reason === "edited",
     );
     lines.push(
-      `  edited ${edited.skill} (${edited.source}): ${list(edited.files)}${behind ? "; upstream changed too, see `skillfleet diff " + edited.skill + "` or `skillfleet merge " + edited.skill + "`" : ""}`,
+      `  edited ${edited.skill} (${edited.source}): ${list(edited.files)}${behind ? "; upstream changed too, see `fleetrc diff " + edited.skill + "` or `fleetrc merge " + edited.skill + "`" : ""}`,
     );
   }
   for (const shadow of report.shadowed)

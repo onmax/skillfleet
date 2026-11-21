@@ -1,6 +1,6 @@
-// Round five of trying to break skillfleet, against fix/round3 (ab042b4): what rounds four and five
+// Round five of trying to break fleetrc, against fix/round3 (ab042b4): what rounds four and five
 // changed most (the sync time limit, the fleet watcher and upgrade, the timer-schedule warning,
-// jsonedit, extends filters, host rules, containment). Each test asserts what skillfleet should do; a
+// jsonedit, extends filters, host rules, containment). Each test asserts what fleetrc should do; a
 // failing test is a break still open. Every run uses the fixture's temporary HOME, and every
 // scheduler call goes to the fixture's fake.
 import { spawnSync } from "node:child_process";
@@ -290,7 +290,7 @@ describe("a sync stopped before it saved state.json", () => {
         for (const limit of [4_000, 15_000, 45_000]) {
           vendor.commit({ "skills/tool/SKILL.md": skillMd("tool", `v${++version}`) });
           const run = await m.runWith(
-            { env: { ...m.env, SKILLFLEET_SYNC_TIMEOUT_MS: String(limit) } },
+            { env: { ...m.env, FLEETRC_SYNC_TIMEOUT_MS: String(limit) } },
             "sync",
           );
           expect(run.code).not.toBe(0);
@@ -309,7 +309,7 @@ describe("a sync stopped before it saved state.json", () => {
         vendor.commit({ "skills/tool/SKILL.md": skillMd("tool", "latest") });
         const report = await m.json("sync");
         // It held the update as a local edit: the copy matched no record, and it was no update
-        // either, so `skillfleet merge tool` stood between the user and every later update.
+        // either, so `fleetrc merge tool` stood between the user and every later update.
         expect(report.edited).toEqual([]);
         expect(report.pending).toEqual([]);
         expect(read(copy)).toContain("latest");
@@ -375,13 +375,13 @@ describe("merge while a sync runs", () => {
         // It used to merge and record the conflicts, and the sync then wrote back the state.json
         // it read before, losing them. Now it waits, and gives up without touching the copy.
         const merge = await m.runWith(
-          { env: { ...m.env, SKILLFLEET_LOCK_WAIT_MS: "500" } },
+          { env: { ...m.env, FLEETRC_LOCK_WAIT_MS: "500" } },
           "merge",
           "tool",
         );
         expect(merge.code).not.toBe(0);
         expect(merge.stderr).toMatch(
-          /another skillfleet sync is running \(pid \d+\); try again when it finishes/,
+          /another fleetrc sync is running \(pid \d+\); try again when it finishes/,
         );
         expect(read(copy)).not.toContain("<<<<<<<");
         writeFileSync(hook.release, "");
@@ -449,7 +449,7 @@ describe("the timer-schedule warning", () => {
     const m = machine({ scheduler: "empty" });
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const me = remote(m, "me", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "vendor", git: vendor.url }],
       }),
@@ -459,14 +459,14 @@ describe("the timer-schedule warning", () => {
     writeFileSync(
       join(m.stateDir, "timer.json"),
       JSON.stringify({
-        spec: { name: "skillfleet-sync", cron: "*/30 * * * *", timeZone: "local" },
+        spec: { name: "fleetrc-sync", cron: "*/30 * * * *", timeZone: "local" },
         files: [],
       }),
     );
     // A schedule change pushed from another machine. The first sync to see it is the timer's, and
     // its note goes to the timer's log, which nobody reads.
     me.commit({
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         timer: { cron: "0 * * * *" },
         sources: [{ id: "vendor", git: vendor.url }],
@@ -475,7 +475,7 @@ describe("the timer-schedule warning", () => {
     // The timer runs every half hour; by the time the user looks, its next run has replaced the
     // last-run report that held the note.
     for (let run = 0; run < 2; run++) {
-      const timerRun = await m.runWith({ env: { ...m.env, SKILLFLEET_TIMER: "1" } }, "sync");
+      const timerRun = await m.runWith({ env: { ...m.env, FLEETRC_TIMER: "1" } }, "sync");
       expect(timerRun.code, timerRun.stdout + timerRun.stderr).toBe(0);
     }
     // The user asks what is wrong: doctor reads the same record the note came from, and says
@@ -491,21 +491,21 @@ describe("fleet upgrade", () => {
     "R8-3. a host whose upgrade went in but whose sync after it failed (the timer held the lock) still shows its version change",
     async () => {
       const m = machine({ agents: false });
-      const dir = join(m.root, "state", "skillfleet");
+      const dir = join(m.root, "state", "fleetrc");
       mkdirSync(join(dir, "bin"), { recursive: true });
       writeFileSync(join(dir, "version"), "0.0.1\n");
-      // The installed skillfleet: `sync` finds the timer's sync running, as `sync --json` says it.
+      // The installed fleetrc: `sync` finds the timer's sync running, as `sync --json` says it.
       writeFileSync(
-        join(dir, "bin", "skillfleet"),
+        join(dir, "bin", "fleetrc"),
         `#!/bin/sh
 v=$(cat "${dir}/version")
 case "$1" in
   --version) echo "$v" ;;
-  sync) echo '{"ok":false,"error":"another skillfleet sync is running (pid 4242)"}'; echo "skillfleet: another skillfleet sync is running (pid 4242)" >&2; exit 1 ;;
+  sync) echo '{"ok":false,"error":"another fleetrc sync is running (pid 4242)"}'; echo "fleetrc: another fleetrc sync is running (pid 4242)" >&2; exit 1 ;;
 esac
 `,
       );
-      chmodSync(join(dir, "bin", "skillfleet"), 0o755);
+      chmodSync(join(dir, "bin", "fleetrc"), 0o755);
       const npx = join(m.root, "npx-bin");
       mkdirSync(npx);
       writeFileSync(join(npx, "npx"), `#!/bin/sh\necho 0.0.2 > "${dir}/version"\n`);
@@ -522,19 +522,19 @@ process.exit(run.status ?? 1);`,
       );
       const saved = {
         XDG_STATE_HOME: process.env.XDG_STATE_HOME,
-        SKILLFLEET_SSH: process.env.SKILLFLEET_SSH,
+        FLEETRC_SSH: process.env.FLEETRC_SSH,
         PATH: process.env.PATH,
       };
       process.env.XDG_STATE_HOME = join(m.root, "state");
-      process.env.SKILLFLEET_SSH = ssh;
+      process.env.FLEETRC_SSH = ssh;
       process.env.PATH = pathWith(npx, process.env);
       try {
         const results = await fleet(["localhost"], "upgrade", "0.0.2", 60_000);
         // The host now runs 0.0.2, and its launcher says so.
         expect(
-          spawnSync(join(dir, "bin", "skillfleet"), ["--version"], { encoding: "utf8" }).stdout,
+          spawnSync(join(dir, "bin", "fleetrc"), ["--version"], { encoding: "utf8" }).stdout,
         ).toBe("0.0.2\n");
-        // It printed only "localhost: another skillfleet sync is running (pid 4242); no run
+        // It printed only "localhost: another fleetrc sync is running (pid 4242); no run
         // recorded": the upgrade, which went in, is not said.
         expect(formatFleet(results)).toContain("0.0.1 → 0.0.2");
       } finally {
@@ -548,7 +548,7 @@ process.exit(run.status ?? 1);`,
 
 describe("the manifest: extends objects, team git hosts, the in-place editor", () => {
   // HOME, the XDG folders and git's global config point into a temporary folder for this block.
-  const root = mkdtempSync(join(tmpdir(), "skillfleet-r5-manifest-"));
+  const root = mkdtempSync(join(tmpdir(), "fleetrc-r5-manifest-"));
   const saved = { ...process.env };
   beforeAll(() => {
     const home = join(root, "home");
@@ -605,24 +605,24 @@ describe("the manifest: extends objects, team git hosts, the in-place editor", (
       expect.soft(isRemoteGit(url), url).toBe(true);
   });
 
-  describe("a manifest in a folder's .skillfleet/", () => {
-    it("resolves relative paths against .skillfleet/; a team named by its file keeps its extends in the file's folder", async () => {
-      write("r5-folder/.skillfleet/manifest.json", {
+  describe("a manifest in a folder's .fleetrc/", () => {
+    it("resolves relative paths against .fleetrc/; a team named by its file keeps its extends in the file's folder", async () => {
+      write("r5-folder/.fleetrc/manifest.json", {
         extends: ["./team.json"],
         sources: [{ id: "mine", local: ".." }],
       });
-      write("r5-folder/.skillfleet/team.json", {
+      write("r5-folder/.fleetrc/team.json", {
         extends: ["./shared.json", "../outside.json"],
         sources: [{ id: "team", index: "https://team.example.com" }],
       });
-      write("r5-folder/.skillfleet/shared.json", {
+      write("r5-folder/.fleetrc/shared.json", {
         sources: [{ id: "shared", index: "https://s.example.com" }],
       });
       write("r5-folder/outside.json", {
         sources: [{ id: "outside", index: "https://o.example.com" }],
       });
       const loaded = await loadManifest(join(root, "r5-folder"), { offline: true });
-      expect(loaded.root.file).toBe(join(root, "r5-folder", ".skillfleet", "manifest.json"));
+      expect(loaded.root.file).toBe(join(root, "r5-folder", ".fleetrc", "manifest.json"));
       expect(loaded.sources.map((source) => source.id)).toEqual(["mine", "team", "shared"]);
       const mine = loaded.sources[0]!;
       expect(mine.kind === "local" && mine.local).toBe(join(root, "r5-folder"));
@@ -630,18 +630,18 @@ describe("the manifest: extends objects, team git hosts, the in-place editor", (
       expect(loaded.warnings.join("\n")).toMatch(/outside it/);
     });
 
-    it("a team named by its file path in a .skillfleet/ folder can't extend the folder around it", async () => {
-      // ~/.skillfleet/team.json named as a file: its boundary is ~/.skillfleet, not the home folder.
+    it("a team named by its file path in a .fleetrc/ folder can't extend the folder around it", async () => {
+      // ~/.fleetrc/team.json named as a file: its boundary is ~/.fleetrc, not the home folder.
       const home = process.env.HOME!;
       write("home/private.json", { sources: [{ id: "private", index: "https://p.example.com" }] });
-      write("home/.skillfleet/team.json", {
+      write("home/.fleetrc/team.json", {
         extends: ["../private.json"],
         sources: [{ id: "team", index: "https://team.example.com" }],
       });
       const file = write("r5-byfile/me.json", {
-        extends: ["~/.skillfleet/team.json", join(home, ".skillfleet", "manifest.json")],
+        extends: ["~/.fleetrc/team.json", join(home, ".fleetrc", "manifest.json")],
       });
-      write("home/.skillfleet/manifest.json", { extends: ["../private.json"], sources: [] });
+      write("home/.fleetrc/manifest.json", { extends: ["../private.json"], sources: [] });
       const loaded = await loadManifest(file, { offline: true });
       expect(loaded.sources.map((source) => source.id)).toEqual(["team"]);
       expect(loaded.failed).toEqual(["../private.json", "../private.json"]);
@@ -651,7 +651,7 @@ describe("the manifest: extends objects, team git hosts, the in-place editor", (
     it.each(["file", "folder"])(
       "keeps each team's boundary when the %s is named first",
       async (first) => {
-        const team = write("r5-boundary/team/.skillfleet/manifest.json", {
+        const team = write("r5-boundary/team/.fleetrc/manifest.json", {
           extends: ["../shared.json"],
           sources: [
             { id: "team", npm: "team" },
@@ -696,12 +696,12 @@ describe("the manifest: extends objects, team git hosts, the in-place editor", (
 
         const team = join(m.root, "team");
         writeFiles(team, {
-          ".skillfleet/manifest.json": JSON.stringify({ extends: ["../shared.json"] }),
+          ".fleetrc/manifest.json": JSON.stringify({ extends: ["../shared.json"] }),
           "shared.json": readable ? "{}" : "{",
         });
         m.manifest({
           agents: ["claude-code"],
-          extends: [team, `${team}/./.skillfleet/manifest.json`],
+          extends: [team, `${team}/./.fleetrc/manifest.json`],
         });
 
         const report = await m.json<Report>("sync");
@@ -714,7 +714,7 @@ describe("the manifest: extends objects, team git hosts, the in-place editor", (
     it("does not read a skills.json at the folder's root", async () => {
       write("r5-old/skills.json", { sources: [] });
       await expect(loadManifest(join(root, "r5-old"), { offline: true })).rejects.toThrow(
-        /r5-old has no \.skillfleet\/manifest\.json; name the manifest file as .*<file>/,
+        /r5-old has no \.fleetrc\/manifest\.json; name the manifest file as .*<file>/,
       );
     });
   });
@@ -825,7 +825,7 @@ describe("the manifest: extends objects, team git hosts, the in-place editor", (
       // JSON.parse keeps the last "sources"; the editor walks the first one's items by the last one's
       // indexes and reads past its end.
       const text = `{\n  "sources": [{ "id": "a", "git": "https://example.com/a.git" }],\n  "sources": [\n    { "id": "a", "git": "https://example.com/a.git" },\n    { "id": "b", "git": "https://example.com/b.git" }\n  ]\n}\n`;
-      const file = write("r5-dup/.skillfleet/manifest.json", text);
+      const file = write("r5-dup/.fleetrc/manifest.json", text);
       editManifest(file, (raw) => {
         const sources = raw.sources as Record<string, unknown>[];
         sources[1]!.exclude = ["x"];

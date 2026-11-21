@@ -101,7 +101,7 @@ const run = spawnSync("sh", ["-c", rest[1]], { stdio: "inherit" });
 process.exit(run.status ?? 1);
 `,
   );
-  return { SKILLFLEET_SSH: script };
+  return { FLEETRC_SSH: script };
 }
 
 describe("errors", () => {
@@ -112,7 +112,7 @@ describe("errors", () => {
     expect(init.code).toBe(1);
     oneLine(init);
     expect(init.stderr).toMatch(
-      /^skillfleet: cannot read the repository .*typo\.git: it does not exist, or it is private/,
+      /^fleetrc: cannot read the repository .*typo\.git: it does not exist, or it is private/,
     );
   });
 
@@ -130,15 +130,15 @@ describe("errors", () => {
     },
   );
 
-  it("D1. an error skillfleet did not expect names the debug variable, and prints the stack only with it", async () => {
+  it("D1. an error fleetrc did not expect names the debug variable, and prints the stack only with it", async () => {
     const m = machine();
     // A config.json that is a folder: reading it fails with an error no check expects.
-    mkdirSync(m.at(".config/skillfleet/config.json"), { recursive: true });
+    mkdirSync(m.at(".config/fleetrc/config.json"), { recursive: true });
     const plain = await m.run("status");
     expect(plain.code).toBe(1);
-    expect(plain.stderr).toMatch(/SKILLFLEET_DEBUG=1/);
+    expect(plain.stderr).toMatch(/FLEETRC_DEBUG=1/);
     expect(plain.stderr).not.toMatch(/^\s+at /m);
-    const debug = await m.runWith({ env: { SKILLFLEET_DEBUG: "1" } }, "status");
+    const debug = await m.runWith({ env: { FLEETRC_DEBUG: "1" } }, "status");
     expect(debug.stderr).toMatch(/^\s+at /m);
   });
 
@@ -150,7 +150,7 @@ describe("errors", () => {
     oneLine(init);
     expect(init.stderr).toContain('agents names "claude-cod", which is not an agent id');
     expect(init.stderr).toContain('did you mean "claude-code"?');
-    expect(init.stderr).toContain("`skillfleet agents` lists the ids");
+    expect(init.stderr).toContain("`fleetrc agents` lists the ids");
   });
 
   it('D3. "agents": "all" with no agent installed warns that nothing was linked', async () => {
@@ -283,7 +283,7 @@ describe("--json prints one JSON document", () => {
   });
 });
 
-describe("list --json, the API programs built on skillfleet read", () => {
+describe("list --json, the API programs built on fleetrc read", () => {
   it.skipIf(isWindows)("lists the state a custom installed launcher just synced", async () => {
     const m = machine({ agents: false });
     const mine = join(m.root, "mine");
@@ -301,7 +301,7 @@ describe("list --json, the API programs built on skillfleet read", () => {
       "--no-hooks",
     );
     expect(init.code, init.stderr).toBe(0);
-    const launcher = join(custom, "skillfleet", "bin", "skillfleet");
+    const launcher = join(custom, "fleetrc", "bin", "fleetrc");
     const run = <T>(override: string | undefined, ...args: string[]): T => {
       const result = spawnSync(launcher, args, {
         cwd: m.home,
@@ -416,7 +416,7 @@ describe("--copy", () => {
     });
     expect((await m.run("init", manifest, "--no-hooks", "--copy")).code).toBe(0);
     const config = () =>
-      JSON.parse(read(m.at(".config/skillfleet/config.json"))) as { copy?: boolean };
+      JSON.parse(read(m.at(".config/fleetrc/config.json"))) as { copy?: boolean };
     expect(config().copy).toBe(true);
     expect(isLink(m.at(".claude/skills/tool"))).toBe(false);
     vendor.commit({ "skills/tool/SKILL.md": skillMd("tool", "v2") });
@@ -437,7 +437,7 @@ describe("fork with a manifest kept in a repository", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const manifests = remote(m, "manifests", {
-      ".skillfleet/manifest.json": "{}",
+      ".fleetrc/manifest.json": "{}",
       ...skills("skills/", "mine"),
     });
     const work = clone(m, manifests, "code/manifests");
@@ -448,17 +448,17 @@ describe("fork with a manifest kept in a repository", () => {
         { id: "vendor", git: vendor.url },
       ],
     };
-    manifests.commit({ ".skillfleet/manifest.json": JSON.stringify(content) });
+    manifests.commit({ ".fleetrc/manifest.json": JSON.stringify(content) });
     m.git(work, "pull", "--quiet");
     expect(
-      (await m.run("init", `${manifests.url}//.skillfleet/manifest.json`, "--no-hooks")).code,
+      (await m.run("init", `${manifests.url}//.fleetrc/manifest.json`, "--no-hooks")).code,
     ).toBe(0);
     const fork = await m.run("fork", "tool");
     expect(fork.code, fork.stdout + fork.stderr).toBe(0);
     expect(fork.stdout).toContain(
-      `then commit and push ${join("~", "code", "manifests", ".skillfleet", "manifest.json")}`,
+      `then commit and push ${join("~", "code", "manifests", ".fleetrc", "manifest.json")}`,
     );
-    const edited = JSON.parse(read(join(work, ".skillfleet", "manifest.json"))) as {
+    const edited = JSON.parse(read(join(work, ".fleetrc", "manifest.json"))) as {
       forks: Record<string, { from: string }>;
       sources: { exclude?: string[] }[];
     };
@@ -480,7 +480,7 @@ describe("fork with a manifest kept in a repository", () => {
     const personal = remote(m, "personal", skills("skills/", "mine"));
     const work = clone(m, personal, "code/skills");
     const manifests = remote(m, "manifests", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [
           { id: "mine", git: personal.url, path: work, skills: "skills/*", adopt: true },
@@ -489,7 +489,7 @@ describe("fork with a manifest kept in a repository", () => {
       }),
     });
     expect(
-      (await m.run("init", `${manifests.url}//.skillfleet/manifest.json`, "--no-hooks")).code,
+      (await m.run("init", `${manifests.url}//.fleetrc/manifest.json`, "--no-hooks")).code,
     ).toBe(0);
     const before = snapshot(m.root);
     const fork = await m.run("fork", "tool");
@@ -542,7 +542,7 @@ describe("docs and help", () => {
     const m = machine();
     const help = await m.run("add", "--help");
     expect(help.code).toBe(0);
-    expect(help.stdout).toMatch(/^Usage: skillfleet add <source> \[options\]\n/);
+    expect(help.stdout).toMatch(/^Usage: fleetrc add <source> \[options\]\n/);
     for (const flag of ["--id", "--skills", "--include", "--exclude", "--review", "--dry-run"])
       expect(help.stdout).toContain(`  ${flag}`);
     expect(help.stdout).not.toContain("--timeout");
@@ -574,11 +574,9 @@ describe("docs and help", () => {
     const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
     const spec = await m.json<{ env: Record<string, string> }>("timer", "install", "--dry-run");
-    expect(spec.env.SKILLFLEET_TIMER).toBe("1");
-    const run = await m.runWith({ env: { SKILLFLEET_TIMER: "1" } }, "sync");
-    expect(run.stdout).toMatch(
-      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z skillfleet: linked 0 skills/,
-    );
+    expect(spec.env.FLEETRC_TIMER).toBe("1");
+    const run = await m.runWith({ env: { FLEETRC_TIMER: "1" } }, "sync");
+    expect(run.stdout).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z fleetrc: linked 0 skills/);
   });
 
   it("MAC10. a warning about a folder names it as the disk lists it", () => {

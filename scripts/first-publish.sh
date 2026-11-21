@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publishes skillfleet@0.0.0 by hand, once, to claim the name on npm. npm only lets
+# Publishes fleetrc@0.0.0 by hand, once, to claim the name on npm. npm only lets
 # you add a trusted publisher to a package that exists, and every later
 # version goes out from release.yaml through that trusted publisher.
 set -euo pipefail
@@ -36,7 +36,7 @@ if npm trust github --help >/dev/null 2>&1; then
   cat <<EOF
 Either run:
 
-  npm trust github $name --file release.yaml --repo onmax/skillfleet --env npm --allow-publish
+  npm trust github $name --file release.yaml --repo onmax/fleetrc --env npm --allow-publish
 
 or, on npmjs.com, open https://www.npmjs.com/package/$name/access, and under
 Trusted publishing pick GitHub Actions and fill in:
@@ -51,7 +51,7 @@ fi
 cat <<EOF
 
   Organization or user: onmax
-  Repository:           skillfleet
+  Repository:           fleetrc
   Workflow filename:    release.yaml
   Environment name:     npm
 

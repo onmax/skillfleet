@@ -1,4 +1,4 @@
-// Session hooks, skillfleet's default trigger: `hook run <agent>` starts a sync in the background
+// Session hooks, fleetrc's default trigger: `hook run <agent>` starts a sync in the background
 // when the last attempt is stale, `hook install` and `hook remove` edit Claude Code's settings.json
 // and Codex's hooks.json, and init, status and doctor follow the hooks or the timer.
 import { spawn, spawnSync } from "node:child_process";
@@ -59,7 +59,7 @@ async function hooked(options: { agents?: boolean; scheduler?: "forbid" | "empty
 const hook = (m: Machine, agent: string, input = SESSION, env: NodeJS.ProcessEnv = {}) =>
   m.runWith({ input, env: { ...m.env, ...env } }, "hook", "run", agent);
 
-const log = (m: Machine) => join(m.stateDir, "logs", "skillfleet-sync.log");
+const log = (m: Machine) => join(m.stateDir, "logs", "fleetrc-sync.log");
 /** The syncs the hooks started, as their lines in the log say. */
 const started = (m: Machine) =>
   existsSync(log(m))
@@ -127,7 +127,7 @@ describe("hook run", () => {
   it("stays quiet and exits 0 with a broken config.json", async () => {
     const { m } = await hooked();
     rmSync(join(m.stateDir, "hook-attempt"), { force: true });
-    writeFileSync(m.at(".config", "skillfleet", "config.json"), "{");
+    writeFileSync(m.at(".config", "fleetrc", "config.json"), "{");
     for (const input of [SESSION, PROMPT, "not json"]) {
       const run = await hook(m, "claude-code", input);
       expect(run).toEqual({ code: 0, stdout: "", stderr: "" });
@@ -153,7 +153,7 @@ describe("hook run", () => {
     await hook(m, "codex");
     expect(started(m)).toHaveLength(1);
     // Stale again (the threshold is 0 here): one more.
-    await hook(m, "codex", SESSION, { SKILLFLEET_HOOK_STALE_MS: "0" });
+    await hook(m, "codex", SESSION, { FLEETRC_HOOK_STALE_MS: "0" });
     expect(started(m)).toHaveLength(2);
   });
 
@@ -162,13 +162,13 @@ describe("hook run", () => {
     // This test's process stands in for a running sync.
     writeFileSync(join(m.stateDir, "sync.lock"), lockText());
     try {
-      const run = await hook(m, "claude-code", SESSION, { SKILLFLEET_HOOK_STALE_MS: "0" });
+      const run = await hook(m, "claude-code", SESSION, { FLEETRC_HOOK_STALE_MS: "0" });
       expect(run).toEqual({ code: 0, stdout: "", stderr: "" });
       expect(started(m)).toEqual([]);
     } finally {
       rmSync(join(m.stateDir, "sync.lock"), { force: true });
     }
-    await hook(m, "claude-code", SESSION, { SKILLFLEET_HOOK_STALE_MS: "0" });
+    await hook(m, "claude-code", SESSION, { FLEETRC_HOOK_STALE_MS: "0" });
     expect(started(m)).toHaveLength(1);
   });
 
@@ -219,7 +219,7 @@ describe("hook run", () => {
     const { m } = await hooked();
     // The claim's holder waits before it stamps, so every hook reads the stamp stale: without the
     // claim, each would start a sync.
-    const env = { SKILLFLEET_HOOK_CLAIM_HOLD_MS: "1500" };
+    const env = { FLEETRC_HOOK_CLAIM_HOLD_MS: "1500" };
     const runs = await Promise.all(
       Array.from({ length: 6 }, (_, i) => hook(m, i % 2 ? "codex" : "claude-code", SESSION, env)),
     );
@@ -237,7 +237,7 @@ describe("hook run", () => {
       `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(seen)}, JSON.stringify({ cwd: process.cwd(), path: process.env.PATH }));\n`,
     );
     const manifest = JSON.parse(
-      read(join(m.root, "manifest", ".skillfleet", "manifest.json")),
+      read(join(m.root, "manifest", ".fleetrc", "manifest.json")),
     ) as object;
     m.manifest({
       ...manifest,
@@ -248,7 +248,7 @@ describe("hook run", () => {
     mkdirSync(agentBin);
     const run = await hook(m, "codex", SESSION, {
       PATH: [agentBin, m.env.PATH].join(delimiter),
-      SKILLFLEET_HOOK_STALE_MS: "0",
+      FLEETRC_HOOK_STALE_MS: "0",
     });
     expect(run.code).toBe(0);
     await waitFor("the manifest's hook", () => existsSync(seen));
@@ -324,7 +324,7 @@ describe("hook install and remove", () => {
     writeFileSync(m.at(".claude", "settings.json"), original);
     const install = await m.run("hook", "install");
     expect(install.code, install.stderr).toBe(0);
-    expect(install.stdout).toContain("Claude Code: added skillfleet's hook to");
+    expect(install.stdout).toContain("Claude Code: added fleetrc's hook to");
     expect(install.stdout).toMatch(/Codex: added .*open \/hooks in Codex and approve it/);
     const text = read(m.at(".claude", "settings.json"));
     expect(text).toContain('\n    "model": "opus"');
@@ -339,7 +339,7 @@ describe("hook install and remove", () => {
     expect(ours("SessionStart")[0]).toContain(
       process.platform === "win32"
         ? `${join(m.stateDir, "bin", "node-dir")}\\node.exe ${join(m.stateDir, "app", "cli.mjs")}`
-        : 'test -x "$HOME/.local/state/skillfleet/bin/skillfleet" && "$HOME/.local/state/skillfleet/bin/skillfleet" hook run claude-code 2>/dev/null; true',
+        : 'test -x "$HOME/.local/state/fleetrc/bin/fleetrc" && "$HOME/.local/state/fleetrc/bin/fleetrc" hook run claude-code 2>/dev/null; true',
     );
     expect(after.hooks!.UserPromptSubmit![0]!.hooks[0]!.command).toBe("echo mine");
     expect(after.hooks!.Stop).toEqual(own.hooks.Stop);
@@ -354,13 +354,13 @@ describe("hook install and remove", () => {
 
     const remove = await m.run("hook", "remove");
     expect(remove.code, remove.stderr).toBe(0);
-    expect(remove.stdout).toContain("Claude Code: removed skillfleet's hook");
+    expect(remove.stdout).toContain("Claude Code: removed fleetrc's hook");
     expect(JSON.parse(read(m.at(".claude", "settings.json")))).toEqual(own);
     expect(JSON.parse(read(m.at(".codex", "hooks.json")))).toEqual({});
-    expect((await m.run("hook", "remove")).stdout).toContain("Claude Code: no skillfleet hook in");
+    expect((await m.run("hook", "remove")).stdout).toContain("Claude Code: no fleetrc hook in");
   });
 
-  it("replaces an older entry of skillfleet's instead of adding a second, and takes out its prompt hooks", async () => {
+  it("replaces an older entry of fleetrc's instead of adding a second, and takes out its prompt hooks", async () => {
     const m = machine();
     writeFileSync(
       m.at(".claude", "settings.json"),
@@ -373,20 +373,20 @@ describe("hook install and remove", () => {
                 {
                   type: "command",
                   command:
-                    '"$HOME/.local/state/skillfleet/bin/skillfleet" hook run claude-code 2>/dev/null || true',
+                    '"$HOME/.local/state/fleetrc/bin/fleetrc" hook run claude-code 2>/dev/null || true',
                 },
               ],
             },
           ],
           UserPromptSubmit: [
-            { hooks: [{ type: "command", command: "npx skillfleet hook prompt" }] },
+            { hooks: [{ type: "command", command: "npx fleetrc hook prompt" }] },
             {
               hooks: [
                 { type: "command", command: "echo mine" },
                 {
                   type: "command",
                   command:
-                    'test -x "$HOME/.local/state/skillfleet/bin/skillfleet" && "$HOME/.local/state/skillfleet/bin/skillfleet" hook run claude-code 2>/dev/null; true',
+                    'test -x "$HOME/.local/state/fleetrc/bin/fleetrc" && "$HOME/.local/state/fleetrc/bin/fleetrc" hook run claude-code 2>/dev/null; true',
                 },
               ],
             },
@@ -401,7 +401,7 @@ describe("hook install and remove", () => {
     expect(line(start[0]!.hooks[0]!)).toMatch(
       isWindows ? / hook run claude-code$/ : / hook run claude-code 2>\/dev\/null; true$/,
     );
-    // The user's own prompt hook stays; skillfleet's two are gone.
+    // The user's own prompt hook stays; fleetrc's two are gone.
     expect(settings(m).hooks!.UserPromptSubmit).toEqual([
       { hooks: [{ type: "command", command: "echo mine" }] },
     ]);
@@ -410,7 +410,7 @@ describe("hook install and remove", () => {
   it("disables legacy Codex prompt hooks from another state directory without shifting other hooks", async () => {
     const m = machine();
     const file = m.at(".codex", "hooks.json");
-    const launcher = join(m.stateDir, "bin", isWindows ? "skillfleet.cmd" : "skillfleet");
+    const launcher = join(m.stateDir, "bin", isWindows ? "fleetrc.cmd" : "fleetrc");
     mkdirSync(dirname(launcher), { recursive: true });
     writeFileSync(
       launcher,
@@ -469,7 +469,7 @@ describe("hook install and remove", () => {
   it("replaces an older Codex SessionStart entry where it stands, so a hook after it keeps its place", async () => {
     const m = machine();
     const file = m.at(".codex", "hooks.json");
-    const older = { type: "command", command: "npx -y skillfleet hook prompt" };
+    const older = { type: "command", command: "npx -y fleetrc hook prompt" };
     const custom = { type: "command", command: "echo mine" };
     writeFileSync(
       file,
@@ -522,7 +522,7 @@ describe("hook install and remove", () => {
   it("puts the Codex entry in a group for every session when the older one is under a matcher, and status ignores placeholders", async () => {
     const m = machine();
     const file = m.at(".codex", "hooks.json");
-    const older = { type: "command", command: "npx -y skillfleet hook prompt" };
+    const older = { type: "command", command: "npx -y fleetrc hook prompt" };
     const custom = { type: "command", command: "echo mine" };
     writeFileSync(
       file,
@@ -534,7 +534,7 @@ describe("hook install and remove", () => {
         SessionStart: { matcher?: string; hooks: Entry[] }[];
       }
     ).SessionStart;
-    // The user's hook keeps its place; skillfleet's runs for every session start.
+    // The user's hook keeps its place; fleetrc's runs for every session start.
     expect(groups[0]!.matcher).toBe("resume");
     expect(groups[0]!.hooks[1]).toEqual(custom);
     expect(groups.at(-1)!.matcher).toBeUndefined();
@@ -563,10 +563,10 @@ describe("hook install and remove", () => {
 
   it("on Windows writes Claude Code's entry in exec form, and Codex's for cmd, with % kept from cmd", () => {
     const profile = "C:\\Users\\Jo & Ann %PATH% x";
-    const state = `${profile}\\AppData\\Local\\skillfleet`;
+    const state = `${profile}\\AppData\\Local\\fleetrc`;
     const options = {
       platform: "win32" as const,
-      launcher: `${state}\\bin\\skillfleet.cmd`,
+      launcher: `${state}\\bin\\fleetrc.cmd`,
       node: `${state}\\bin\\node-dir\\node.exe`,
       cli: `${state}\\app\\cli.mjs`,
       profile,
@@ -578,18 +578,18 @@ describe("hook install and remove", () => {
     });
     // cmd /C expands %PATH% even in quotes, but not inside what %USERPROFILE% expands to.
     expect(hookHandler("codex", options).command).toBe(
-      '"%USERPROFILE%\\AppData\\Local\\skillfleet\\bin\\skillfleet.cmd" hook run codex',
+      '"%USERPROFILE%\\AppData\\Local\\fleetrc\\bin\\fleetrc.cmd" hook run codex',
     );
-    const plain = "C:\\Users\\Jo & Ann\\AppData\\Local\\skillfleet\\bin\\skillfleet.cmd";
+    const plain = "C:\\Users\\Jo & Ann\\AppData\\Local\\fleetrc\\bin\\fleetrc.cmd";
     expect(hookHandler("codex", { ...options, launcher: plain }).command).toBe(
       `"${plain}" hook run codex`,
     );
     expect(
-      hookHandler("claude-code", { platform: "linux", launcher: "/h/a b/skillfleet", home: "/u" }),
+      hookHandler("claude-code", { platform: "linux", launcher: "/h/a b/fleetrc", home: "/u" }),
     ).toEqual({
       type: "command",
       command:
-        'test -x "/h/a b/skillfleet" && "/h/a b/skillfleet" hook run claude-code 2>/dev/null; true',
+        'test -x "/h/a b/fleetrc" && "/h/a b/fleetrc" hook run claude-code 2>/dev/null; true',
     });
 
     // An entry an older install wrote in shell form gives way to exec form, once.
@@ -610,7 +610,7 @@ describe("hook install and remove", () => {
     withHook(raw, handler, "claude-code");
     expect(JSON.stringify(raw)).toBe(once);
     expect(isOwnHandler(handler)).toBe(true);
-    // Another program's node script is not skillfleet's.
+    // Another program's node script is not fleetrc's.
     expect(
       isOwnHandler({ command: "node", args: ["C:\\tools\\app\\cli.mjs", "hook", "run"] }),
     ).toBe(false);
@@ -622,7 +622,7 @@ describe("hook install and remove", () => {
     const m = machine();
     const dry = await m.run("hook", "install", "--dry-run");
     expect(dry.code, dry.stderr).toBe(0);
-    expect(dry.stdout).toContain("Claude Code: would add skillfleet's hook");
+    expect(dry.stdout).toContain("Claude Code: would add fleetrc's hook");
     expect(existsSync(m.at(".claude", "settings.json"))).toBe(false);
     expect(existsSync(m.at(".codex", "hooks.json"))).toBe(false);
     expect(existsSync(m.stateDir)).toBe(false);
@@ -678,7 +678,7 @@ describe("init, status and doctor with the hooks or the timer", () => {
     expect((await m.run("hook", "remove", "codex")).code).toBe(0);
     const removed = JSON.parse(read(file)) as typeof raw;
     const handlers = removed.hooks.SessionStart[0]!.hooks;
-    expect(handlers[0]?.command).toContain("skillfleet: disabled legacy hook");
+    expect(handlers[0]?.command).toContain("fleetrc: disabled legacy hook");
     expect(handlers[1]).toEqual(custom);
     const json = await m.json<{ trigger: { hooks: string[]; timer: boolean } }>("status");
     expect(json.trigger).toEqual({ hooks: [], timer: false });
@@ -732,11 +732,11 @@ describe("init, status and doctor with the hooks or the timer", () => {
     expect(existsSync(m.at(".claude", "settings.json"))).toBe(false);
     const status = await m.run("status");
     expect(status.stdout).toMatch(
-      /^syncs start from: nothing starts a sync on this machine; run `skillfleet hook install`/m,
+      /^syncs start from: nothing starts a sync on this machine; run `fleetrc hook install`/m,
     );
     const doctor = await m.run("doctor");
     expect(doctor.stdout).toMatch(
-      /^warn sync trigger: nothing starts a sync.*`skillfleet timer install`/m,
+      /^warn sync trigger: nothing starts a sync.*`fleetrc timer install`/m,
     );
     expect(doctor.code).toBe(0);
   });
@@ -750,7 +750,7 @@ describe("init, status and doctor with the hooks or the timer", () => {
     expect(timer.stdout).toContain("the timer was not installed");
     // A machine where `timer install` ran once.
     writeFileSync(
-      m.at(".config", "skillfleet", "config.json"),
+      m.at(".config", "fleetrc", "config.json"),
       JSON.stringify({ manifest, timer: true }),
     );
     const status = await m.run("status");
@@ -829,7 +829,7 @@ describe("the hooks on shared and upgraded machines", () => {
     const addHook = (raw: Record<string, unknown>) =>
       withHook(
         raw,
-        { type: "command", command: '"/s/skillfleet" hook run claude-code' },
+        { type: "command", command: '"/s/fleetrc" hook run claude-code' },
         "claude-code",
       );
     const stop = { Stop: [{ hooks: [{ type: "command", command: "echo stop" }] }] };
@@ -858,7 +858,7 @@ describe("the hooks on shared and upgraded machines", () => {
         step: () => writeFileSync(settings, `{ "n": ${++n} }\n`),
       });
       expect(result.changed).toBe(false);
-      expect(result.error).toContain("changed while skillfleet was editing it");
+      expect(result.error).toContain("changed while fleetrc was editing it");
       expect(read(settings)).toBe('{ "n": 2 }\n');
       expect(readdirSync(dirname(settings))).toEqual(["settings.json"]);
     });
@@ -893,7 +893,7 @@ describe("the hooks on shared and upgraded machines", () => {
         rmSync(target);
         const dangling = editHooksFile(settings, addHook, { create: true });
         expect(dangling.changed).toBe(false);
-        expect(dangling.error).toContain("which does not exist; skillfleet left it alone");
+        expect(dangling.error).toContain("which does not exist; fleetrc left it alone");
         expect(lstatSync(settings).isSymbolicLink()).toBe(true);
         expect(existsSync(target)).toBe(false);
       },
@@ -902,33 +902,33 @@ describe("the hooks on shared and upgraded machines", () => {
 
   it("owns only the commands it writes, and a user's command that mentions them is left", async () => {
     const own = [
-      'test -x "$HOME/.local/state/skillfleet/bin/skillfleet" && "$HOME/.local/state/skillfleet/bin/skillfleet" hook run claude-code 2>/dev/null; true',
-      'test -x "/opt/my state/skillfleet/bin/skillfleet" && "/opt/my state/skillfleet/bin/skillfleet" hook run codex 2>/dev/null; true',
+      'test -x "$HOME/.local/state/fleetrc/bin/fleetrc" && "$HOME/.local/state/fleetrc/bin/fleetrc" hook run claude-code 2>/dev/null; true',
+      'test -x "/opt/my state/fleetrc/bin/fleetrc" && "/opt/my state/fleetrc/bin/fleetrc" hook run codex 2>/dev/null; true',
       // What earlier versions wrote, recognised so that it is replaced.
-      '"$HOME/.local/state/skillfleet/bin/skillfleet" hook run claude-code 2>/dev/null || true',
-      "/home/u/.local/state/skillfleet/bin/skillfleet hook run codex",
-      '"%USERPROFILE%\\AppData\\Local\\skillfleet\\bin\\skillfleet.cmd" hook run codex',
-      '"C:\\Users\\Jo & Ann\\AppData\\Local\\skillfleet\\bin\\skillfleet.cmd" hook run codex',
-      "skillfleet hook prompt",
-      "npx skillfleet hook prompt",
-      "/home/u/.local/state/skillfleet/bin/skillfleet hook prompt",
+      '"$HOME/.local/state/fleetrc/bin/fleetrc" hook run claude-code 2>/dev/null || true',
+      "/home/u/.local/state/fleetrc/bin/fleetrc hook run codex",
+      '"%USERPROFILE%\\AppData\\Local\\fleetrc\\bin\\fleetrc.cmd" hook run codex',
+      '"C:\\Users\\Jo & Ann\\AppData\\Local\\fleetrc\\bin\\fleetrc.cmd" hook run codex',
+      "fleetrc hook prompt",
+      "npx fleetrc hook prompt",
+      "/home/u/.local/state/fleetrc/bin/fleetrc hook prompt",
     ];
     const theirs = [
-      "printf 'run: skillfleet hook run codex\\n'",
-      "foo && skillfleet hook run codex",
-      '"$HOME/.local/state/skillfleet/bin/skillfleet" hook run codex; rm -rf ~/x',
-      "echo /x/skillfleet hook run claude-code",
-      "skillfleet hook run claude-code | tee log",
-      "my-skillfleet-wrapper hook run codex",
-      'test -x "/a/skillfleet" && "/b/skillfleet" hook run codex 2>/dev/null; true',
-      'test -x "/a/skillfleet" && "/a/skillfleet" hook run codex 2>/dev/null; rm -rf ~; true',
+      "printf 'run: fleetrc hook run codex\\n'",
+      "foo && fleetrc hook run codex",
+      '"$HOME/.local/state/fleetrc/bin/fleetrc" hook run codex; rm -rf ~/x',
+      "echo /x/fleetrc hook run claude-code",
+      "fleetrc hook run claude-code | tee log",
+      "my-fleetrc-wrapper hook run codex",
+      'test -x "/a/fleetrc" && "/b/fleetrc" hook run codex 2>/dev/null; true',
+      'test -x "/a/fleetrc" && "/a/fleetrc" hook run codex 2>/dev/null; rm -rf ~; true',
     ];
     for (const command of own)
       expect(isOwnHandler({ type: "command", command }), command).toBe(true);
     for (const command of theirs)
       expect(isOwnHandler({ type: "command", command }), command).toBe(false);
     const exec = [
-      "C:\\Users\\u\\AppData\\Local\\skillfleet\\app\\cli.mjs",
+      "C:\\Users\\u\\AppData\\Local\\fleetrc\\app\\cli.mjs",
       "hook",
       "run",
       "claude-code",
@@ -937,19 +937,19 @@ describe("the hooks on shared and upgraded machines", () => {
     expect(isOwnHandler({ command: "node", args: [...exec, "--x"] })).toBe(false);
     expect(
       isOwnHandler({
-        command: "C:\\Users\\u\\AppData\\Local\\skillfleet\\bin\\node-dir\\node.exe",
+        command: "C:\\Users\\u\\AppData\\Local\\fleetrc\\bin\\node-dir\\node.exe",
         args: exec,
       }),
     ).toBe(true);
     // bin/node-dir keeps node's own name, which may be a renamed binary.
     expect(
       isOwnHandler({
-        command: "C:\\Users\\u\\AppData\\Local\\skillfleet\\bin\\node-dir\\node-v24.exe",
+        command: "C:\\Users\\u\\AppData\\Local\\fleetrc\\bin\\node-dir\\node-v24.exe",
         args: exec,
       }),
     ).toBe(true);
     expect(isOwnHandler({ command: "node", args: exec })).toBe(true);
-    // A user's program that happens to take skillfleet's args is theirs.
+    // A user's program that happens to take fleetrc's args is theirs.
     expect(isOwnHandler({ command: "C:\\tools\\audit-hook.exe", args: exec })).toBe(false);
     expect(isOwnHandler({ command: "/usr/bin/nodemon", args: exec })).toBe(false);
 
@@ -976,7 +976,7 @@ describe("the hooks on shared and upgraded machines", () => {
     };
     const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
     expect((await m.runWith({ env }, "init", manifest)).code).toBe(0);
-    const state = join(m.root, "st", "skillfleet");
+    const state = join(m.root, "st", "fleetrc");
     // The agent's environment: no XDG_CONFIG_HOME or XDG_STATE_HOME.
     const agent = { ...m.env };
     delete agent.XDG_CONFIG_HOME;
@@ -992,8 +992,8 @@ describe("the hooks on shared and upgraded machines", () => {
       },
     );
     expect({ code: run.status, out: run.stdout + run.stderr }).toEqual({ code: 0, out: "" });
-    expect(read(join(state, "logs", "skillfleet-sync.log"))).toContain("starting a sync");
-    expect(existsSync(m.at(".local", "state", "skillfleet"))).toBe(false);
+    expect(read(join(state, "logs", "fleetrc-sync.log"))).toContain("starting a sync");
+    expect(existsSync(m.at(".local", "state", "fleetrc"))).toBe(false);
   });
 
   it("syncs and lists installed state while honoring explicit and existing Windows state", async () => {
@@ -1007,7 +1007,7 @@ describe("the hooks on shared and upgraded machines", () => {
     const env = { ...m.env, XDG_STATE_HOME: join(m.root, "st") };
     const init = await m.runWith({ env }, "init", manifest, "--no-hooks");
     expect(init.code, init.stderr).toBe(0);
-    const state = join(env.XDG_STATE_HOME, "skillfleet");
+    const state = join(env.XDG_STATE_HOME, "fleetrc");
     expect(existsSync(join(state, "hook-env.json"))).toBe(false);
     const caller: NodeJS.ProcessEnv = { ...env };
     delete caller.XDG_STATE_HOME;
@@ -1027,14 +1027,14 @@ describe("the hooks on shared and upgraded machines", () => {
     expect(names(run("--json", "list"))).toEqual(["first"]);
     expect(run("list")).toContain("first");
 
-    const local = join(caller.LOCALAPPDATA, "skillfleet");
+    const local = join(caller.LOCALAPPDATA, "fleetrc");
     if (isWindows) {
       const install = await m.runWith(
         { env: { ...caller, XDG_STATE_HOME: undefined } },
         "self-install",
       );
       expect(install.code, install.stderr).toBe(0);
-      expect(existsSync(join(local, "bin", "skillfleet.cmd"))).toBe(true);
+      expect(existsSync(join(local, "bin", "fleetrc.cmd"))).toBe(true);
       expect(existsSync(join(local, "state.json"))).toBe(false);
       expect(names(run("list", "--json"))).toEqual(["first"]);
     }
@@ -1087,11 +1087,11 @@ describe("the hooks on shared and upgraded machines", () => {
 
     it.skipIf(isWindows)("names the launcher from $HOME and tests it before running it", () => {
       const { command } = hookHandler("codex", {
-        launcher: "/home/u/.local/state/skillfleet/bin/skillfleet",
+        launcher: "/home/u/.local/state/fleetrc/bin/fleetrc",
         home: "/home/u",
       });
       expect(command).toBe(
-        'test -x "$HOME/.local/state/skillfleet/bin/skillfleet" && "$HOME/.local/state/skillfleet/bin/skillfleet" hook run codex 2>/dev/null; true',
+        'test -x "$HOME/.local/state/fleetrc/bin/fleetrc" && "$HOME/.local/state/fleetrc/bin/fleetrc" hook run codex 2>/dev/null; true',
       );
     });
 
@@ -1101,7 +1101,7 @@ describe("the hooks on shared and upgraded machines", () => {
         `in ${shell}, exits 0 silently when the launcher or its node is gone, and passes the hook's output on`,
         () => {
           const m = machine();
-          const launcher = m.at(".local", "state", "skillfleet", "bin", "skillfleet");
+          const launcher = m.at(".local", "state", "fleetrc", "bin", "fleetrc");
           const { command } = hookHandler("codex", { launcher, home: m.home });
           const run = () =>
             spawnSync(shell, ["-c", command], {
@@ -1151,7 +1151,7 @@ describe("the hooks on shared and upgraded machines", () => {
     const m = machine({ scheduler: "empty" });
     const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-    const old = { hooks: [{ type: "command", command: "npx skillfleet hook prompt" }] };
+    const old = { hooks: [{ type: "command", command: "npx fleetrc hook prompt" }] };
     writeFileSync(
       m.at(".claude", "settings.json"),
       JSON.stringify({ hooks: { UserPromptSubmit: [old] } }),
@@ -1163,7 +1163,7 @@ describe("the hooks on shared and upgraded machines", () => {
       timer: false,
     });
     expect((await m.run("doctor")).stdout).toMatch(
-      /^warn sync trigger: nothing starts a sync.*holds the old `skillfleet hook prompt` entry, which starts no sync/m,
+      /^warn sync trigger: nothing starts a sync.*holds the old `fleetrc hook prompt` entry, which starts no sync/m,
     );
     expect((await m.run("hook", "install", "claude-code")).code).toBe(0);
     expect(settings(m).hooks!.UserPromptSubmit).toBeUndefined();
@@ -1179,7 +1179,7 @@ describe("the hooks on shared and upgraded machines", () => {
       const PATH = systemdShim(m);
       const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
       expect((await m.runWith({ env: { PATH } }, "init", manifest, "--timer")).code).toBe(0);
-      const config = m.at(".config", "skillfleet", "config.json");
+      const config = m.at(".config", "fleetrc", "config.json");
       writeFileSync(config, JSON.stringify({ manifest }));
       const doctor = await m.runWith({ env: { PATH } }, "doctor");
       expect(doctor.stdout).toMatch(/^ok {3}sync trigger: .*, and the timer$/m);
@@ -1195,10 +1195,10 @@ describe("the hooks on shared and upgraded machines", () => {
       expect((await m.runWith({ env: { PATH } }, "doctor")).stdout).not.toMatch(/and the timer$/m);
       expect(JSON.parse(read(config))).toEqual({ manifest, timer: false });
       // A timer that runs another install's copy is that install's.
-      const service = m.at(".config", "systemd", "user", "skillfleet-sync.service");
+      const service = m.at(".config", "systemd", "user", "fleetrc-sync.service");
       writeFileSync(
         service,
-        read(service).replaceAll(m.stateDir, join(m.root, "other", "skillfleet")),
+        read(service).replaceAll(m.stateDir, join(m.root, "other", "fleetrc")),
       );
       writeFileSync(config, JSON.stringify({ manifest }));
       await m.runWith({ env: { PATH } }, "doctor");
@@ -1281,7 +1281,7 @@ describe("the hooks on shared and upgraded machines", () => {
     const stateFile = join(m.stateDir, "state.json");
     const state = () => JSON.parse(read(stateFile));
     const installed = m.at(".claude", "skills", "early", "SKILL.md");
-    const targetManifest = m.at(".claude", "skills", ".skillfleet-manifest.json");
+    const targetManifest = m.at(".claude", "skills", ".fleetrc-manifest.json");
     const stop = join(m.root, "stop.mjs");
     writeFileSync(
       stop,

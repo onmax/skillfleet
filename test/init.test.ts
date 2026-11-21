@@ -280,12 +280,12 @@ describe("init", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "vendor", git: vendor.url }],
       }),
     });
-    const spec = `${team.url}//.skillfleet/manifest.json`;
+    const spec = `${team.url}//.fleetrc/manifest.json`;
     const dry = await m.json<{ manifestFile: string; sync: { manifest: string } }>(
       "init",
       team.url,
@@ -295,7 +295,7 @@ describe("init", () => {
     expect(dry.manifestFile).toBe(spec);
     const text = await m.run("init", team.url, "--dry-run");
     expect(text.stdout).toMatch(
-      new RegExp(`^skillfleet init: manifest ${spec.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}$`, "m"),
+      new RegExp(`^fleetrc init: manifest ${spec.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}$`, "m"),
     );
     expect((await m.run("init", team.url, "--no-hooks")).code).toBe(0);
     expect((await m.json("sync", "--dry-run")).manifest).toBe(spec);
@@ -307,7 +307,7 @@ describe("init", () => {
     function newMachine(m: Machine, { reachable = true } = {}) {
       const mine = remote(m, "mine", skills("skills/", "kept"));
       const team = remote(m, "team", {
-        ".skillfleet/manifest.json": JSON.stringify({
+        ".fleetrc/manifest.json": JSON.stringify({
           agents: ["claude-code"],
           sources: [
             { id: "mine", git: mine.url, path: "~/code/mine", skills: "skills/*", adopt: true },

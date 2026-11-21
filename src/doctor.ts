@@ -61,7 +61,7 @@ export function timeZoneDrift(
   if (!timeZone || timeZone === "local" || platform === "linux" || timeZone === machine)
     return undefined;
   const scheduler = platform === "darwin" ? "launchd" : "Task Scheduler";
-  return `timer.timeZone is ${timeZone}, but this machine is now in ${machine}, and ${scheduler} runs the timer in the machine's zone, so it may run at other times than the manifest says; run \`skillfleet timer install\` to install it for this zone, or remove timer.timeZone`;
+  return `timer.timeZone is ${timeZone}, but this machine is now in ${machine}, and ${scheduler} runs the timer in the machine's zone, so it may run at other times than the manifest says; run \`fleetrc timer install\` to install it for this zone, or remove timer.timeZone`;
 }
 
 function remoteOf(source: Source): string | undefined {
@@ -82,10 +82,10 @@ function skillNames(dir: string): string[] {
 
 /**
  * What fixes a launcher whose node or copy is gone. The launcher itself cannot run then, so the fix
- * goes through npx, which brings its own skillfleet and writes the launcher and the timer again.
+ * goes through npx, which brings its own fleetrc and writes the launcher and the timer again.
  */
 const REPAIR =
-  "run `npx skillfleet@latest self-install` to write the launcher, and the timer's node, again";
+  "run `npx fleetrc@latest self-install` to write the launcher, and the timer's node, again";
 
 /** Why the installed launcher cannot run, or undefined when it can or there is none. */
 function launcherProblem(): string | undefined {
@@ -114,7 +114,7 @@ function timerNodeProblem(): string | undefined {
   const launcher = launcherPath();
   const node = existsSync(launcher) ? launcherNode(readFileSync(launcher, "utf8")) : undefined;
   if (node && node !== timer.node)
-    return `the timer (${tildify(timer.file)}) runs ${timer.node}, while ${tildify(launcher)} runs ${node}; run \`skillfleet timer install\` to run the timer with the launcher's node`;
+    return `the timer (${tildify(timer.file)}) runs ${timer.node}, while ${tildify(launcher)} runs ${node}; run \`fleetrc timer install\` to run the timer with the launcher's node`;
   return undefined;
 }
 
@@ -124,7 +124,7 @@ async function nodeCheck(): Promise<Check> {
     return {
       name: "node",
       ok: true,
-      detail: `${process.execPath} (no installed copy yet; \`skillfleet init\` makes one)`,
+      detail: `${process.execPath} (no installed copy yet; \`fleetrc init\` makes one)`,
     };
   const problem = launcherProblem() ?? timerNodeProblem();
   return {
@@ -185,7 +185,7 @@ function triggerCheck(
     return {
       name,
       ok: false,
-      detail: `the session hooks run ${tildify(launcher)}, which is missing; run \`npx skillfleet@latest self-install\``,
+      detail: `the session hooks run ${tildify(launcher)}, which is missing; run \`npx fleetrc@latest self-install\``,
     };
   const detail = [describeTrigger(hooks, timer), ...legacy].join("; ");
   const onlyUnverifiedCodex =
@@ -216,7 +216,7 @@ function hookRunsCheck(hooks: readonly { agent: HookAgent }[]): Check | undefine
     if (fresh) return { fresh, text: `${name}'s ran within the last day` };
     const why =
       agent === "codex"
-        ? "; the likely cause is a hook not yet approved: open /hooks in Codex and approve skillfleet's"
+        ? "; the likely cause is a hook not yet approved: open /hooks in Codex and approve fleetrc's"
         : "";
     return {
       fresh,
@@ -230,7 +230,7 @@ function hookRunsCheck(hooks: readonly { agent: HookAgent }[]): Check | undefine
 
 /**
  * On a machine whose config.json says nothing of the timer, asks the OS once whether it has
- * skillfleet's timer anyway (installed before config.json recorded it), and records it if that
+ * fleetrc's timer anyway (installed before config.json recorded it), and records it if that
  * timer runs this install's copy. `timer: false`, the user's choice, stays.
  */
 async function adoptTimer(): Promise<void> {
@@ -264,7 +264,7 @@ async function timerCheck(): Promise<Check & { noSystemd?: boolean }> {
     return {
       name,
       ok: false,
-      detail: `installed, but it syncs another skillfleet state folder (its log is ${tildify(status.logFile)}); run \`skillfleet timer install\` to point it at ${tildify(dirname(logs))}`,
+      detail: `installed, but it syncs another fleetrc state folder (its log is ${tildify(status.logFile)}); run \`fleetrc timer install\` to point it at ${tildify(dirname(logs))}`,
     };
   // A timer whose node is gone fails before it writes a line to its log: launchd says exit 78.
   const problem = launcherProblem() ?? timerNodeProblem();
@@ -383,7 +383,7 @@ export async function doctor(manifest?: string): Promise<Check[]> {
     detail:
       both.length === 0
         ? "no skill is in two folders one agent reads"
-        : `Codex reads ${both.join(", ")} from both ${codexDirs.map(tildify).join(" and ")}; \`skillfleet init\` empties the second`,
+        : `Codex reads ${both.join(", ")} from both ${codexDirs.map(tildify).join(" and ")}; \`fleetrc init\` empties the second`,
   });
   // Agent folders should agree on where each name points.
   const targets = await agentTargets(loaded.root.agents);
@@ -409,7 +409,7 @@ export async function doctor(manifest?: string): Promise<Check[]> {
     ...(split.length > 0 ? [`different copies of ${split.join(", ")} across agent folders`] : []),
     ...(skipped.length > 0
       ? [
-          `${skipped.join("; ")}, so sync links no skill there; run \`skillfleet init\` to make it a folder of one link per skill`,
+          `${skipped.join("; ")}, so sync links no skill there; run \`fleetrc init\` to make it a folder of one link per skill`,
         ]
       : []),
   ];

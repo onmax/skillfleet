@@ -1,13 +1,13 @@
 # Linux environment scenarios
 
-Run the packed tarball the way a user does after `npx skillfleet init`, in containers and over real
+Run the packed tarball the way a user does after `npx fleetrc init`, in containers and over real
 SSH. They print `PASS`/`FAIL` per step and keep going, so one run shows every break. The failing
 cases they found are also in `test/linux-envs.test.ts`, which runs without Docker.
 
 ```sh
-pnpm build && npm pack --pack-destination /tmp/sf     # or download https://pkg.pr.new/onmax/skillfleet@<sha>
-sh test/envs/run.sh /tmp/sf/skillfleet-0.0.0.tgz            # every env
-sh test/envs/run.sh /tmp/sf/skillfleet-0.0.0.tgz alpine22 fleet
+pnpm build && npm pack --pack-destination /tmp/sf     # or download https://pkg.pr.new/onmax/fleetrc@<sha>
+sh test/envs/run.sh /tmp/sf/fleetrc-0.0.0.tgz            # every env
+sh test/envs/run.sh /tmp/sf/fleetrc-0.0.0.tgz alpine22 fleet
 ```
 
 | Env                | What it is                                                                                                                              |
@@ -35,7 +35,7 @@ systemd it checks that every timer command says so. It runs outside Docker too, 
 HOME; on a machine with systemd it passes `--timer` only with `SF_TIMER=1`:
 
 ```sh
-SF_TGZ=/tmp/sf/skillfleet-0.0.0.tgz SF_HOME=/tmp/sf/home sh test/envs/scenario.sh
+SF_TGZ=/tmp/sf/fleetrc-0.0.0.tgz SF_HOME=/tmp/sf/home sh test/envs/scenario.sh
 ```
 
 Never point `SF_HOME` at a real HOME: the scenario writes agent folders there.

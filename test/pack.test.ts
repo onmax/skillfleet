@@ -1,4 +1,4 @@
-// The published tarball, installed the way `npx skillfleet` gets it.
+// The published tarball, installed the way `npx fleetrc` gets it.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -19,7 +19,7 @@ describe("packed tarball", () => {
     mkdirSync(out);
     npm(resolve("."), "pack", "--ignore-scripts", "--pack-destination", out);
     const tarball = readdirSync(out).find((file) => file.endsWith(".tgz"))!;
-    expect(tarball).toBe(`skillfleet-${version}.tgz`);
+    expect(tarball).toBe(`fleetrc-${version}.tgz`);
     const project = join(m.root, "project");
     mkdirSync(project);
     writeFileSync(join(project, "package.json"), JSON.stringify({ name: "smoke", private: true }));
@@ -27,10 +27,9 @@ describe("packed tarball", () => {
     // Bundled: the package installs no dependencies.
     expect(
       readdirSync(join(project, "node_modules")).filter((name) => !name.startsWith(".")),
-    ).toEqual(["skillfleet"]);
+    ).toEqual(["fleetrc"]);
 
-    const npx = (...args: string[]) =>
-      npm(project, "exec", "--offline", "--", "skillfleet", ...args);
+    const npx = (...args: string[]) => npm(project, "exec", "--offline", "--", "fleetrc", ...args);
     expect(npx("--version").trim()).toBe(version);
     const vendor = remote(m, "vendor", skills("skills/", "packed"));
     const manifest = m.manifest({

@@ -45,7 +45,7 @@ describe("R7-3. a sync lock taken on another machine or in another container", (
   let dir: string;
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
   const lockFile = () => {
-    dir = mkdtempSync(join(tmpdir(), "skillfleet-lock-"));
+    dir = mkdtempSync(join(tmpdir(), "fleetrc-lock-"));
     return join(dir, "sync.lock");
   };
   const mine = () => JSON.stringify({ pid: process.pid, at: Date.now() });
@@ -126,7 +126,7 @@ describe("R7-3. a sync lock taken on another machine or in another container", (
 
 describe("temporary files of state.json on a HOME other machines share", () => {
   it("go when this host wrote them and their process is gone, or when they are over an hour old", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "skillfleet-temps-"));
+    const dir = mkdtempSync(join(tmpdir(), "fleetrc-temps-"));
     try {
       const gone = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
       await new Promise((done) => gone.on("exit", done));
@@ -144,7 +144,7 @@ describe("temporary files of state.json on a HOME other machines share", () => {
       // Another machine's write in progress: its pid means nothing here.
       const otherHost = file(`state.json.laptop.${gone.pid}.0123456789ab.tmp`);
       const otherHostOld = file(`last-run.json.laptop.${gone.pid}.0123456789ab.tmp`, 2);
-      // Written by an older skillfleet, which named no host.
+      // Written by an older fleetrc, which named no host.
       const unknown = file(`state.json.${gone.pid}.0123456789ab.tmp`);
       const unknownOld = file(`state.json.${gone.pid}.tmp`, 2);
       const unrelated = file("notes.json.tmp", 2);
@@ -198,7 +198,7 @@ describe("R7-5. a sync that never ends", () => {
         for (const [i, limit] of [4_000, 15_000, 45_000].entries()) {
           vendor.commit({ "skills/tool/SKILL.md": skillMd("tool", `v${i + 2}`) });
           const run = await m.runWith(
-            { env: { ...m.env, SKILLFLEET_SYNC_TIMEOUT_MS: String(limit) } },
+            { env: { ...m.env, FLEETRC_SYNC_TIMEOUT_MS: String(limit) } },
             "sync",
           );
           expect(run.code).not.toBe(0);
@@ -287,7 +287,7 @@ describe("R7-19. folder links inside a skill", () => {
   );
 
   it.skipIf(isWindows)(
-    "a vendored skill nested deeper than skillfleet copies is skipped by name",
+    "a vendored skill nested deeper than fleetrc copies is skipped by name",
     async () => {
       const m = machine();
       const deep = Array.from({ length: 40 }, (_, i) => `n${i}`).join("/");

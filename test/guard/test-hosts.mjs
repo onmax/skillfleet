@@ -1,9 +1,9 @@
 // Loaded into every Node process a test starts (test/fixture.ts sets NODE_OPTIONS): a host under
-// skillfleet.test resolves to 127.0.0.1, as git's http.curloptResolve maps the git server. A test
+// fleetrc.test resolves to 127.0.0.1, as git's http.curloptResolve maps the git server. A test
 // server can then go by a name that is no loopback name, which a team manifest may name.
 import dns from "node:dns";
 
-const TEST_HOST = /(?:^|\.)skillfleet\.test\.?$/i;
+const TEST_HOST = /(?:^|\.)fleetrc\.test\.?$/i;
 const lookup = dns.lookup;
 
 dns.lookup = function (hostname, options, callback) {

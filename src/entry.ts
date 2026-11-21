@@ -9,7 +9,7 @@ const [MAJOR, MINOR] = [22, 12];
 const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
 if (major < MAJOR || (major === MAJOR && minor < MINOR)) {
   console.error(
-    `skillfleet needs Node.js ${MAJOR}.${MINOR} or newer, and this is Node.js ${process.versions.node} (${process.execPath}).`,
+    `fleetrc needs Node.js ${MAJOR}.${MINOR} or newer, and this is Node.js ${process.versions.node} (${process.execPath}).`,
   );
   process.exit(1);
 }
@@ -22,7 +22,7 @@ if (
   basename(script) === "cli.mjs" &&
   basename(dirname(script)) === "app" &&
   !args.includes("--dry-run") &&
-  // A hook loads little, and runs on machines skillfleet may not have set up.
+  // A hook loads little, and runs on machines fleetrc may not have set up.
   args[0] !== "hook"
 )
   try {
@@ -41,7 +41,7 @@ else if (
   process.argv.length === 5
 )
   void import("./hook.ts").then((hook) => hook.runHook(agent));
-// What programs built on skillfleet run: list.ts reads state.json alone. An error it meets (a
+// What programs built on fleetrc run: list.ts reads state.json alone. An error it meets (a
 // state.json it may not read) goes to the CLI, which says it in one line.
 else if (command === "list" && action === "--json" && process.argv.length === 4)
   void import("./list.ts").then((list) => list.printSkillList()).catch(() => import("./cli.ts"));

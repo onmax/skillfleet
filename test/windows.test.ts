@@ -1,4 +1,4 @@
-// Breaks found by attacking skillfleet on Windows (the W-rows of the break plan): HOMEs with cmd and
+// Breaks found by attacking fleetrc on Windows (the W-rows of the break plan): HOMEs with cmd and
 // PowerShell metacharacters, long paths, 8.3 names, file names Windows refuses, junctions, read-only
 // and locked files, CRLF checkouts, and the .cmd launcher run from cmd, PowerShell and Git Bash.
 // Each case says what a user should get. They need Windows, so they skip everywhere else.
@@ -151,9 +151,7 @@ async function json(m: Machine, env: NodeJS.ProcessEnv, ...args: string[]): Prom
     const parsed = JSON.parse(run.stdout) as SyncReport & { sync?: SyncReport };
     return parsed.sync ?? parsed;
   } catch {
-    throw new Error(
-      `skillfleet ${args.join(" ")} printed no JSON (exit ${run.code}):\n${both(run)}`,
-    );
+    throw new Error(`fleetrc ${args.join(" ")} printed no JSON (exit ${run.code}):\n${both(run)}`);
   }
 }
 
@@ -287,36 +285,32 @@ describe.skipIf(!isWindows)(
             if (run.stdout.trim() !== version)
               failures.push(`${how}: exit ${run.code}\n${both(run)}`);
           };
-          check(
-            "cmd: skillfleet --version",
-            await cmd("skillfleet --version", { env, cwd: m.root }),
-          );
-          // PowerShell runs skillfleet.ps1. Through the .cmd, cmd expands a %VAR% in its own path,
+          check("cmd: fleetrc --version", await cmd("fleetrc --version", { env, cwd: m.root }));
+          // PowerShell runs fleetrc.ps1. Through the .cmd, cmd expands a %VAR% in its own path,
           // as it would for any batch file in that folder.
           check(
             "PowerShell: & <launcher> --version",
-            await ps(`& ${psQuote(join(bin(m), "skillfleet.ps1"))} --version; exit $LASTEXITCODE`, {
+            await ps(`& ${psQuote(join(bin(m), "fleetrc.ps1"))} --version; exit $LASTEXITCODE`, {
               env,
               cwd: m.root,
             }),
           );
           check(
-            "PowerShell: skillfleet --version",
-            await ps("skillfleet --version; exit $LASTEXITCODE", { env, cwd: m.root }),
+            "PowerShell: fleetrc --version",
+            await ps("fleetrc --version; exit $LASTEXITCODE", { env, cwd: m.root }),
           );
           // Git Bash runs the sh launcher. Its own way of running a .cmd (`cmd /c` without /s)
           // breaks on a path with & ^ ( ) for any batch file, so that is not tried here.
           if (gitBash)
             check(
-              "Git Bash: skillfleet --version",
-              await bash("skillfleet --version", { env, cwd: m.root }),
+              "Git Bash: fleetrc --version",
+              await bash("fleetrc --version", { env, cwd: m.root }),
             );
-          const sync = await cmd("skillfleet sync", { env, cwd: m.root });
-          if (sync.code !== 0)
-            failures.push(`cmd: skillfleet sync: exit ${sync.code}\n${both(sync)}`);
-          const status = await cmd("skillfleet status", { env, cwd: m.root });
+          const sync = await cmd("fleetrc sync", { env, cwd: m.root });
+          if (sync.code !== 0) failures.push(`cmd: fleetrc sync: exit ${sync.code}\n${both(sync)}`);
+          const status = await cmd("fleetrc status", { env, cwd: m.root });
           if (status.code !== 0)
-            failures.push(`cmd: skillfleet status: exit ${status.code}\n${both(status)}`);
+            failures.push(`cmd: fleetrc status: exit ${status.code}\n${both(status)}`);
           expect(failures).toEqual([]);
         },
       );
@@ -327,10 +321,10 @@ describe.skipIf(!isWindows)(
     describe("the .cmd launcher", () => {
       // cmd.exe has a long-standing bug: a batch file started by a quoted name that it finds on
       // PATH gets the current folder for %~dp0, not its own. Scripts quote command names.
-      it('W-LAUNCH-1. `"skillfleet" --version` from another folder runs skillfleet', async () => {
+      it('W-LAUNCH-1. `"fleetrc" --version` from another folder runs fleetrc', async () => {
         const m = machine();
         await setUp(m);
-        const run = await cmd(`"skillfleet" --version`, {
+        const run = await cmd(`"fleetrc" --version`, {
           env: withPath(m.env, bin(m)),
           cwd: m.root,
         });
@@ -352,15 +346,15 @@ describe.skipIf(!isWindows)(
         const install = await start(node, [cli, "self-install"], { env, cwd: m.home }).done;
         expect(install.code, both(install)).toBe(0);
         // The launchers run that node; the .cmd reaches it through a junction, with an ASCII path.
-        expect(read(join(bin(m), "skillfleet"))).toContain("José");
-        const run = await cmd("skillfleet --version", {
+        expect(read(join(bin(m), "fleetrc"))).toContain("José");
+        const run = await cmd("fleetrc --version", {
           env: { ...env, PATH: [bin(m), system].join(";") },
           cwd: m.root,
         });
         expect(run.stdout.trim(), both(run)).toBe(version);
       });
 
-      // An argument must reach skillfleet as the user typed it, in each shell's own quoting.
+      // An argument must reach fleetrc as the user typed it, in each shell's own quoting.
       const ARGS = ["a&b", "a|b", "a^b", "%PATH%", "a b(c)"];
       const unknown = (arg: string) => `unknown command "${arg}"`;
       const argsCheck = async (
@@ -382,35 +376,35 @@ describe.skipIf(!isWindows)(
         expect(failures).toEqual([]);
       };
 
-      it("W-LAUNCH-3. cmd: quoted arguments with & | ^ reach skillfleet unchanged", async () => {
+      it("W-LAUNCH-3. cmd: quoted arguments with & | ^ reach fleetrc unchanged", async () => {
         // %PATH% is left out: cmd expands it before any program runs.
         await argsCheck(
           "cmd",
-          (m, env, arg) => cmd(`skillfleet "${arg}"`, { env, cwd: m.root }),
+          (m, env, arg) => cmd(`fleetrc "${arg}"`, { env, cwd: m.root }),
           ARGS.filter((arg) => !arg.includes("%")),
         );
       });
 
-      it("W-LAUNCH-4. Windows PowerShell: arguments with & | ^ % reach skillfleet unchanged", async () => {
+      it("W-LAUNCH-4. Windows PowerShell: arguments with & | ^ % reach fleetrc unchanged", async () => {
         await argsCheck("powershell", (m, env, arg) =>
-          ps(`skillfleet ${psQuote(arg)}; exit $LASTEXITCODE`, { env, cwd: m.root }),
+          ps(`fleetrc ${psQuote(arg)}; exit $LASTEXITCODE`, { env, cwd: m.root }),
         );
       });
 
       it.runIf(pwsh !== undefined)(
-        "W-LAUNCH-5. PowerShell 7: arguments with & | ^ % reach skillfleet unchanged",
+        "W-LAUNCH-5. PowerShell 7: arguments with & | ^ % reach fleetrc unchanged",
         async () => {
           await argsCheck("pwsh", (m, env, arg) =>
-            ps(`skillfleet ${psQuote(arg)}; exit $LASTEXITCODE`, { env, cwd: m.root, exe: pwsh }),
+            ps(`fleetrc ${psQuote(arg)}; exit $LASTEXITCODE`, { env, cwd: m.root, exe: pwsh }),
           );
         },
       );
 
       it.runIf(gitBash !== undefined)(
-        "W-LAUNCH-6. Git Bash: arguments with & | ^ % reach skillfleet unchanged, through the sh launcher",
+        "W-LAUNCH-6. Git Bash: arguments with & | ^ % reach fleetrc unchanged, through the sh launcher",
         async () => {
-          await argsCheck("bash skillfleet", (m, env, arg) =>
-            bash(`skillfleet ${shQuote(arg)}`, { env, cwd: m.root }),
+          await argsCheck("bash fleetrc", (m, env, arg) =>
+            bash(`fleetrc ${shQuote(arg)}`, { env, cwd: m.root }),
           );
         },
       );
@@ -419,7 +413,7 @@ describe.skipIf(!isWindows)(
     // ---------------------------------------------------------------------------------------------
     describe("long paths", () => {
       // Git for Windows checks out no path past MAX_PATH (260) unless core.longpaths is on, and it is
-      // off by default. A repository whose paths fit a clone in C:\src fails in skillfleet's cache,
+      // off by default. A repository whose paths fit a clone in C:\src fails in fleetrc's cache,
       // which sits ~120 characters deeper.
       it("W-LONG-1. a skill with a file 230 characters deep in its repository is linked whole", async () => {
         const m = machine();
@@ -450,7 +444,7 @@ describe.skipIf(!isWindows)(
         expect(m.home.length).toBeGreaterThan(160);
         await setUp(m);
         expect(read(m.at(".claude/skills/tool/SKILL.md"))).toBe(skillMd("tool"));
-        const run = await cmd("skillfleet --version", {
+        const run = await cmd("fleetrc --version", {
           env: withPath(m.env, bin(m)),
           cwd: m.root,
         });
@@ -515,7 +509,7 @@ describe.skipIf(!isWindows)(
     // ---------------------------------------------------------------------------------------------
     describe("the same HOME by another path", () => {
       // Windows hands out 8.3 paths (TEMP is C:\Users\RUNNER~1\... on GitHub's runners): the same
-      // HOME may reach skillfleet spelled short in one shell and long in another.
+      // HOME may reach fleetrc spelled short in one shell and long in another.
       it("W-83. a sync with HOME's 8.3 path after one with its long path changes nothing", async ({
         skip,
       }) => {
@@ -563,7 +557,7 @@ describe.skipIf(!isWindows)(
         "W-DRIVE. HOME on another drive than TEMP and the state folder: init, dry run, update and diff work",
         async () => {
           const m = machine({ base: other });
-          const state = realpathSync(mkdtempSync(join(tmpdir(), "skillfleet-state-")));
+          const state = realpathSync(mkdtempSync(join(tmpdir(), "fleetrc-state-")));
           try {
             const env = { ...m.env, XDG_STATE_HOME: state };
             const { vendor } = await setUp(m, env);
@@ -587,7 +581,7 @@ describe.skipIf(!isWindows)(
       );
 
       // subst changes the session's drives, so only the windows-break CI job runs this.
-      it.runIf(process.env.SKILLFLEET_BREAK_SUBST === "1")(
+      it.runIf(process.env.FLEETRC_BREAK_SUBST === "1")(
         "W-SUBST. a HOME reached through a subst drive, then through its real path, keeps its links",
         async () => {
           const m = machine();
@@ -606,10 +600,10 @@ describe.skipIf(!isWindows)(
               for (const target of report.targets) expect(target.removed, target.dir).toEqual([]);
               expect(read(m.at(".claude/skills/tool/SKILL.md"))).toBe(skillMd("tool"));
             }
-            const launcher = await cmd("skillfleet --version", {
+            const launcher = await cmd("fleetrc --version", {
               env: withPath(
                 homeEnv(m, substHome),
-                join(substHome, ".local", "state", "skillfleet", "bin"),
+                join(substHome, ".local", "state", "fleetrc", "bin"),
               ),
               cwd: m.root,
             });
@@ -799,32 +793,32 @@ describe.skipIf(!isWindows)(
           sources: [{ id: "vendor", git: vendor.url }],
           hooks: [{ name: "slow", run: slowHook(m, log, 25), on: ["vendor:**"] }],
         });
-        mkdirSync(m.at(".config/skillfleet"), { recursive: true });
-        writeFileSync(m.at(".config/skillfleet/config.json"), JSON.stringify({ manifest }));
+        mkdirSync(m.at(".config/fleetrc"), { recursive: true });
+        writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest }));
         const self = await m.run("self-install");
         expect(self.code, both(self)).toBe(0);
         const env = withPath(m.env, bin(m));
         let started: ReturnType<typeof start>;
-        if (how === "cmd") started = cmdStart("skillfleet sync", { env, cwd: m.root });
+        if (how === "cmd") started = cmdStart("fleetrc sync", { env, cwd: m.root });
         else if (how === "PowerShell")
-          started = psStart(`& ${psQuote(join(bin(m), "skillfleet.cmd"))} sync`, {
+          started = psStart(`& ${psQuote(join(bin(m), "fleetrc.cmd"))} sync`, {
             env,
             cwd: m.root,
           });
         else if (how === "Git Bash")
-          started = start(gitBash!, [posix(join(bin(m), "skillfleet")), "sync"], {
+          started = start(gitBash!, [posix(join(bin(m), "fleetrc")), "sync"], {
             env,
             cwd: m.root,
           });
         else {
-          // `npm install -g skillfleet`: npm's cmd-shim runs "%dp0%\node_modules\...", and %dp0%
+          // `npm install -g fleetrc`: npm's cmd-shim runs "%dp0%\node_modules\...", and %dp0%
           // ends with a backslash, so node's command line has `npm\\node_modules`.
           const prefix = join(m.root, "npm");
-          cpSync(dirname(cli), join(prefix, "node_modules", "skillfleet", "dist"), {
+          cpSync(dirname(cli), join(prefix, "node_modules", "fleetrc", "dist"), {
             recursive: true,
           });
           writeFileSync(
-            join(prefix, "skillfleet.cmd"),
+            join(prefix, "fleetrc.cmd"),
             [
               "@ECHO off",
               "GOTO start",
@@ -842,11 +836,11 @@ describe.skipIf(!isWindows)(
               "  SET PATHEXT=%PATHEXT:;.JS;=;%",
               ")",
               "",
-              'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\skillfleet\\dist\\cli.mjs" %*',
+              'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\fleetrc\\dist\\cli.mjs" %*',
               "",
             ].join("\r\n"),
           );
-          started = cmdStart("skillfleet sync", { env: withPath(m.env, prefix), cwd: m.root });
+          started = cmdStart("fleetrc sync", { env: withPath(m.env, prefix), cwd: m.root });
         }
         await until("the first sync's hook", () => existsSync(log), 90_000);
         return { m, started, log, manifest };
@@ -860,7 +854,7 @@ describe.skipIf(!isWindows)(
           try {
             const second = await m.run("sync");
             expect(second.code, both(second)).not.toBe(0);
-            expect(second.stderr).toContain("another skillfleet sync is running");
+            expect(second.stderr).toContain("another fleetrc sync is running");
           } finally {
             killTree(started.child.pid);
             await started.done;
@@ -911,7 +905,7 @@ describe.skipIf(!isWindows)(
       async function bothAgents(m: Machine, vendor: ReturnType<typeof remote>) {
         const codex = entry(m.at(".codex", "hooks.json"));
         expect(codex.args).toBeUndefined();
-        expect(codex.command).toMatch(/skillfleet\.cmd" hook run codex$/);
+        expect(codex.command).toMatch(/fleetrc\.cmd" hook run codex$/);
         vendor.commit({ "skills/second/SKILL.md": skillMd("second") });
         let before = lastRun(m).finishedAt;
         const run = await start(comspec, ["/C", `"${codex.command}"`], {

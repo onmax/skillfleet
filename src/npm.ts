@@ -39,7 +39,7 @@ const PACKAGE_NAME = /^(?:@[a-z0-9~-][a-z0-9._~-]*\/)?[a-z0-9~-][a-z0-9._~-]*$/i
 /** One path segment that looks like a version: semver and the looser versions old registries hold. */
 const VERSION = /^[0-9A-Za-z](?:[0-9A-Za-z.+_-]{0,126}[0-9A-Za-z])?$/;
 
-/** Largest tarball skillfleet downloads, and the most it unpacks to. */
+/** Largest tarball fleetrc downloads, and the most it unpacks to. */
 const TARBALL_LIMIT = 100 * 1024 * 1024;
 
 async function readCapped(
@@ -67,10 +67,10 @@ const NO_BODY = new Set([101, 103, 204, 205, 304]);
 
 /**
  * How long a download waits for the server to answer, or for its next bytes.
- * SKILLFLEET_FETCH_WAIT_MS shortens it, for tests.
+ * FLEETRC_FETCH_WAIT_MS shortens it, for tests.
  */
 const waitMs = (() => {
-  const set = Number(process.env.SKILLFLEET_FETCH_WAIT_MS);
+  const set = Number(process.env.FLEETRC_FETCH_WAIT_MS);
   return set > 0 && set < 30_000 ? set : 30_000;
 })();
 

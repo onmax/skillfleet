@@ -64,7 +64,8 @@ import {
   webPage,
 } from "./manifest.ts";
 import { findName, nameKey } from "./names.ts";
-import { paths, tildify } from "./paths.ts";
+import { migrationNeeded } from "./legacy.ts";
+import { paths, stateDir, tildify } from "./paths.ts";
 import { formatReport, type Report } from "./report.ts";
 import {
   commandOnPath,
@@ -97,7 +98,7 @@ import {
   TIMER_NAME,
   TimerError,
   timerKind,
-  type TimerSpec,
+  syncTimerSpec,
   type TimerStatus,
   timerNode,
   timerStatus,
@@ -141,7 +142,7 @@ type Option = keyof typeof OPTIONS;
 interface Command {
   usage: string;
   summary: string;
-  /** More on what it does, for `skillfleet <command> --help`. */
+  /** More on what it does, for `fleetrc <command> --help`. */
   details?: string;
   options: Option[];
 }
@@ -162,7 +163,7 @@ const COMMANDS: Record<string, Command> = {
     usage: "init [manifest]",
     summary: "Point this machine at a manifest, migrate the folders, install the session hooks",
     details:
-      "The manifest is a repository (owner/repo, github:owner/repo, gitlab:group/repo or a git URL ending in .git, read for its .skillfleet/manifest.json), <repo>//<file>, or a file or folder on this machine (a folder means its .skillfleet/manifest.json). Without one, init uses the configured manifest again. The session hooks go into Claude Code and Codex where they are installed (see `skillfleet hook --help`); a machine that had the timer keeps it.",
+      "The manifest is a repository (owner/repo, github:owner/repo, gitlab:group/repo or a git URL ending in .git, read for its .fleetrc/manifest.json), <repo>//<file>, or a file or folder on this machine (a folder means its .fleetrc/manifest.json). Without one, init uses the configured manifest again. The session hooks go into Claude Code and Codex where they are installed (see `fleetrc hook --help`); a machine that had the timer keeps it.",
     options: [...SYNC_OPTIONS, "timer", "no-hooks", "force"],
   },
   status: {
@@ -243,7 +244,7 @@ const COMMANDS: Record<string, Command> = {
     usage: "fleet sync|status|upgrade|init|add [host|tag:<name>...]",
     summary: "Run on the manifest's machines over SSH, or add machines to it",
     details:
-      "fleet sync and fleet status take host names to run on fewer machines than the manifest lists. A tag:<name> stands for every machine on your tailnet with that Tailscale tag, as `tailscale status` lists them when the command runs. fleet add with no host suggests machines and tags on your tailnet. fleet upgrade installs this version on every host with npx. fleet init <host|tag:<name>...> sets new machines up from this one: on each, it runs `npx skillfleet init` with this machine's manifest, which must be in a repository, then adds the hosts to the fleet; --copy, --no-copy, --timer, --no-hooks and --force go to each host's init, and --force also sets up a host that has another manifest.",
+      "fleet sync and fleet status take host names to run on fewer machines than the manifest lists. A tag:<name> stands for every machine on your tailnet with that Tailscale tag, as `tailscale status` lists them when the command runs. fleet add with no host suggests machines and tags on your tailnet. fleet upgrade installs this version on every host with npx. fleet init <host|tag:<name>...> sets new machines up from this one: on each, it runs `npx fleetrc init` with this machine's manifest, which must be in a repository, then adds the hosts to the fleet; --copy, --no-copy, --timer, --no-hooks and --force go to each host's init, and --force also sets up a host that has another manifest.",
     options: [
       "dry-run",
       "json",
@@ -260,13 +261,13 @@ const COMMANDS: Record<string, Command> = {
     usage: "hook install|remove [agent]",
     summary: "Add or remove the hooks that sync when a Claude Code or Codex session starts",
     details:
-      "Without an agent (claude-code or codex), acts on each whose folder exists. The hooks run `skillfleet hook run <agent>` when a session starts: when no sync was started in the last 15 minutes and none is running, it starts one in the background. Nothing runs on each prompt; `hook install` takes out the prompt hooks older versions added.",
+      "Without an agent (claude-code or codex), acts on each whose folder exists. The hooks run `fleetrc hook run <agent>` when a session starts: when no sync was started in the last 15 minutes and none is running, it starts one in the background. Nothing runs on each prompt; `hook install` takes out the prompt hooks older versions added.",
     options: ["dry-run", "json"],
   },
   "self-install": {
     usage: "self-install",
     summary:
-      "Copy this skillfleet into the state folder for the timer (init and fleet upgrade run it)",
+      "Copy this fleetrc into the state folder for the timer (init and fleet upgrade run it)",
     options: [],
   },
 };
@@ -281,7 +282,7 @@ const optionLine = (name: Option) => {
 };
 
 const USAGE = [
-  "Usage: skillfleet [command] [options]",
+  "Usage: fleetrc [command] [options]",
   "",
   "Keeps the same skills in every agent's skills folder, from the sources a manifest lists.",
   "",
@@ -297,13 +298,13 @@ const USAGE = [
     ["offline", "dry-run", "json", "copy", "no-copy", "manifest", "version", "help"] as const
   ).map(optionLine),
   "",
-  "`skillfleet <command> --help` shows a command's options.",
+  "`fleetrc <command> --help` shows a command's options.",
 ].join("\n");
 
 function commandHelp(name: string): string {
   const entry = COMMANDS[name]!;
   return [
-    `Usage: skillfleet ${entry.usage}${entry.options.length ? " [options]" : ""}`,
+    `Usage: fleetrc ${entry.usage}${entry.options.length ? " [options]" : ""}`,
     "",
     entry.summary,
     ...(entry.details ? ["", entry.details] : []),
@@ -322,12 +323,12 @@ const jsonRequested = () => {
 };
 
 /**
- * One line on stderr and exit code 2, for a command line skillfleet can't run. Under --json,
+ * One line on stderr and exit code 2, for a command line fleetrc can't run. Under --json,
  * stdout gets the error as a document too.
  */
 function usageError(message: string): never {
   if (jsonRequested()) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
-  console.error(`skillfleet: ${message}`);
+  console.error(`fleetrc: ${message}`);
   process.exit(2);
 }
 
@@ -342,7 +343,7 @@ try {
 } catch (error) {
   // Node's message goes on about positionals after its first sentence.
   const said = (error as Error).message.split("\n")[0]!.replace(/(\.) .*/, "$1");
-  usageError(`${said} See \`skillfleet --help\`.`);
+  usageError(`${said} See \`fleetrc --help\`.`);
 }
 const { values, positionals } = args;
 const [command = "sync", ...rest] = positionals;
@@ -359,7 +360,7 @@ function say(...lines: string[]) {
 const emit = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 
 function usage(message: string): never {
-  usageError(`${message}; see \`skillfleet ${command} --help\``);
+  usageError(`${message}; see \`fleetrc ${command} --help\``);
 }
 
 function one(name: string): string {
@@ -382,7 +383,7 @@ function copyMode(): boolean {
 /** The sync report as the timer's log gets it: the first line starts with the time of the run. */
 function reportText(report: Report): string {
   const text = formatReport(report);
-  return process.env.SKILLFLEET_TIMER ? `${report.finishedAt} ${text}` : text;
+  return process.env.FLEETRC_TIMER ? `${report.finishedAt} ${text}` : text;
 }
 
 async function syncReport(
@@ -407,7 +408,7 @@ async function runSync(options: { only?: string; apply?: string } = {}) {
     report = await syncReport(options);
   } catch (error) {
     // The timer comes back on its next run, so meeting a manual sync is no failure for its unit.
-    if (!(error instanceof LockHeldError) || !process.env.SKILLFLEET_TIMER) throw error;
+    if (!(error instanceof LockHeldError) || !process.env.FLEETRC_TIMER) throw error;
     console.log(`${new Date().toISOString()} skipped: another sync is running (pid ${error.pid})`);
     return 0;
   }
@@ -423,7 +424,7 @@ async function runSync(options: { only?: string; apply?: string } = {}) {
  */
 async function currentTimerSettings(notes: string[]): Promise<Manifest["timer"]> {
   const spec = manifestSpec(values.manifest);
-  const scratch = dryRun ? mkdtempSync(join(tmpdir(), "skillfleet-timer-")) : undefined;
+  const scratch = dryRun ? mkdtempSync(join(tmpdir(), "fleetrc-timer-")) : undefined;
   try {
     return (await loadManifest(spec, scratch ? { cacheRoot: join(scratch, "manifests") } : {})).root
       .timer;
@@ -449,15 +450,7 @@ async function installTimer(settings?: Manifest["timer"]): Promise<{
   const timer = settings ?? (await currentTimerSettings(notes));
   const installed = dryRun ? undefined : selfInstall();
   const node = installed?.node ?? stableNode();
-  const spec: TimerSpec = {
-    name: TIMER_NAME,
-    cron: timer.cron,
-    timeZone: timer.timeZone ?? "local",
-    command: [node, installed?.cli ?? installedCli(), "sync"],
-    // SKILLFLEET_TIMER puts the time of each run in the log.
-    env: { ...timerEnv(findOnPath("git"), node), SKILLFLEET_TIMER: "1" },
-    logDir: paths.logs(),
-  };
+  const spec = syncTimerSpec(timer, node, installed?.cli ?? installedCli());
   const lines = [
     ...notes,
     `timer ${TIMER_NAME}: \`${spec.command.join(" ")}\` on "${spec.cron}" (${spec.timeZone === "local" ? `the machine's time zone, now ${machineTimeZone()}` : spec.timeZone})`,
@@ -518,7 +511,7 @@ async function followLauncherNode(node: string): Promise<string[]> {
     settings = (await loadManifest(manifestSpec(values.manifest), { offline: true })).root.timer;
   } catch (error) {
     return [
-      `the timer still runs ${timer.node}, and the manifest to install it again does not load (${(error as Error).message.split("\n")[0]}); run \`skillfleet timer install\``,
+      `the timer still runs ${timer.node}, and the manifest to install it again does not load (${(error as Error).message.split("\n")[0]}); run \`fleetrc timer install\``,
     ];
   }
   const result = await installTimer(settings);
@@ -629,7 +622,7 @@ async function status() {
     return 0;
   }
   say(
-    `manifest: ${config?.manifest ?? "none; run `skillfleet init <manifest>`"}${config?.tailscale ? " (from the tailnet policy)" : ""}`,
+    `manifest: ${config?.manifest ?? "none; run `fleetrc init <manifest>`"}${config?.tailscale ? " (from the tailnet policy)" : ""}`,
   );
   if (!report) say("no sync has run on this machine yet");
   else
@@ -854,7 +847,7 @@ async function remove() {
     );
   }
   const linked = loadState().skills;
-  // The skill as skillfleet keeps it, typed in any case or Unicode form.
+  // The skill as fleetrc keeps it, typed in any case or Unicode form.
   const skill = findName(Object.keys(linked), name);
   const owner = skill === undefined ? undefined : linked[skill]!.source;
   const source = loaded.sources.find((candidate) => candidate.id === owner);
@@ -937,7 +930,7 @@ function addHooks(
   const lines = formatHookChanges(changes, "install", dryRun);
   if (changes.every((change) => change.skipped))
     lines.push(
-      "no Claude Code or Codex here, so no session hook starts a sync; install one of them and run `skillfleet hook install`, or on a machine where no agent runs, `skillfleet timer install`",
+      "no Claude Code or Codex here, so no session hook starts a sync; install one of them and run `fleetrc hook install`, or on a machine where no agent runs, `fleetrc timer install`",
     );
   return { lines, changes, code: changes.some((change) => change.error) ? 1 : 0 };
 }
@@ -965,10 +958,10 @@ async function init() {
     else if (named) throw new UserError(found.error);
     else if (config) {
       given = config.manifest;
-      say(`skillfleet: keeping ${given}: ${found.error}`);
+      say(`fleetrc: keeping ${given}: ${found.error}`);
     } else
       usage(
-        `init needs a manifest: a path, a repository such as owner/repo (its .skillfleet/manifest.json), or <repo>//<file> such as github:org/agents//team.json; with none, it asks the tailnet policy, but ${found.error}`,
+        `init needs a manifest: a path, a repository such as owner/repo (its .fleetrc/manifest.json), or <repo>//<file> such as github:org/agents//team.json; with none, it asks the tailnet policy, but ${found.error}`,
       );
   }
   if (!given) throw new UserError("init needs a manifest");
@@ -1101,11 +1094,11 @@ async function fleetCommand(action: string | undefined) {
         .map(([tag, machines]) => ({ tag, machines }));
       if (json) emit({ suggestions, tags });
       else if (suggestions.length === 0 && tags.length === 0)
-        say("no tailnet machines to suggest; name hosts: skillfleet fleet add <host>...");
+        say("no tailnet machines to suggest; name hosts: fleetrc fleet add <host>...");
       else {
         if (suggestions.length > 0)
           say(
-            "machines on your tailnet; add the ones you want with `skillfleet fleet add <host>...`:",
+            "machines on your tailnet; add the ones you want with `fleetrc fleet add <host>...`:",
             ...suggestions.map(
               (peer) =>
                 `  ${peer.host}${peer.online ? "" : " (offline)"}${peer.dns ? `  ${peer.dns}` : ""}`,
@@ -1113,7 +1106,7 @@ async function fleetCommand(action: string | undefined) {
           );
         if (tags.length > 0)
           say(
-            "tags on your tailnet; `skillfleet fleet add tag:<name>` adds every machine with the tag, now and later:",
+            "tags on your tailnet; `fleetrc fleet add tag:<name>` adds every machine with the tag, now and later:",
             ...tags.map(
               ({ tag, machines }) => `  ${tag}  (${machines} machine${machines === 1 ? "" : "s"})`,
             ),
@@ -1148,14 +1141,13 @@ async function fleetCommand(action: string | undefined) {
     usageError(
       action === "status"
         ? "fleet status changes nothing, so it has no --dry-run"
-        : "fleet upgrade has no --dry-run; `skillfleet fleet status` shows each host's version",
+        : "fleet upgrade has no --dry-run; `fleetrc fleet status` shows each host's version",
     );
   const entries = rest.length > 1 ? rest.slice(1) : loaded.root.fleet;
-  if (entries.length === 0)
-    usage("the manifest has no fleet; add hosts with `skillfleet fleet add`");
+  if (entries.length === 0) usage("the manifest has no fleet; add hosts with `fleetrc fleet add`");
   const bad = entries.filter(isTag).flatMap((entry) => tagProblem(entry) ?? []);
   if (bad.length > 0) usage(bad.join("; "));
-  if (action === "upgrade") {
+  if (action === "upgrade" && !process.env.FLEETRC_PACKAGE) {
     const reason = await unpublished(version);
     if (reason) throw new UserError(reason);
   }
@@ -1192,7 +1184,7 @@ async function fleetTargets(
     dryRun,
     setup,
   });
-  for (const warning of warnings) console.error(`skillfleet: warning: ${warning}`);
+  for (const warning of warnings) console.error(`fleetrc: warning: ${warning}`);
   if (dryRun)
     for (const tag of new Set(
       targets.flatMap((target) => (target.error ? [] : (target.via ?? []))),
@@ -1207,7 +1199,7 @@ async function fleetTargets(
 }
 
 /**
- * `fleet init <host|tag:...>...`: on each host, over ssh, `npx skillfleet init` with this machine's
+ * `fleet init <host|tag:...>...`: on each host, over ssh, `npx fleetrc init` with this machine's
  * manifest; a host that has it already syncs. Then the hosts set up go into the manifest's fleet,
  * unless it names them or a tag of theirs; a tag goes in only if all its current peers are ready.
  */
@@ -1221,7 +1213,7 @@ async function fleetInit(loaded: Awaited<ReturnType<typeof loadManifest>>) {
   const shared = sharedManifestProblem(configured);
   if (shared) throw new UserError(shared);
   const spec = hostManifestSpec(configured);
-  if (!process.env.SKILLFLEET_PACKAGE) {
+  if (!process.env.FLEETRC_PACKAGE) {
     const reason = await unpublished(version, "init");
     if (reason) throw new UserError(reason);
   }
@@ -1352,7 +1344,7 @@ async function fork() {
   const details = { ...result, dryRun };
   if (dryRun) {
     say(
-      `would copy ${tildify(result.from)} to ${tildify(result.to)}, record the fork in ${where}, and remove skillfleet's copy`,
+      `would copy ${tildify(result.from)} to ${tildify(result.to)}, record the fork in ${where}, and remove fleetrc's copy`,
     );
     if (json) emit(details);
     return 0;
@@ -1381,6 +1373,13 @@ async function merge() {
   return result.conflicts.length && !dryRun ? 1 : 0;
 }
 
+/**
+ * The commands that move the old name's install to fleetrc's names first (migrate.ts): those that
+ * change things, and every fleet action but status, so `fleet upgrade` can start the rollout from a
+ * machine that has only the old install.
+ */
+const MIGRATING = new Set(["sync", "update", "init", "self-install", "fleet"]);
+
 async function main(): Promise<number> {
   if (values.version) {
     console.log(version);
@@ -1394,7 +1393,7 @@ async function main(): Promise<number> {
   if (!entry) {
     const near = closest(command, Object.keys(COMMANDS));
     usageError(
-      `unknown command "${command}"${near ? `; did you mean "${near}"?` : "."} \`skillfleet --help\` lists the commands`,
+      `unknown command "${command}"${near ? `; did you mean "${near}"?` : "."} \`fleetrc --help\` lists the commands`,
     );
   }
   if (values.help) {
@@ -1408,11 +1407,20 @@ async function main(): Promise<number> {
     if (!allowed.includes(name) && name !== "help")
       usageError(
         name !== "dry-run"
-          ? `${command} does not take --${name}; see \`skillfleet ${command} --help\``
+          ? `${command} does not take --${name}; see \`fleetrc ${command} --help\``
           : READ_ONLY.has(command)
             ? `${command} changes nothing, so it has no --dry-run`
             : `${command} has no --dry-run`,
       );
+  // The first command of this release that changes things moves the old name's install, once.
+  if (
+    MIGRATING.has(command) &&
+    !(command === "fleet" && rest[0] === "status") &&
+    migrationNeeded(stateDir())
+  ) {
+    const { migrate } = await import("./migrate.ts");
+    say(...(await migrate({ dryRun })).lines);
+  }
   switch (command) {
     case "sync":
       if (rest.length > 1) usage("sync takes at most one source");
@@ -1481,8 +1489,8 @@ async function main(): Promise<number> {
 
 /**
  * What to tell the user about an error, in one line. Mistakes and failures they can act on (a
- * wrong name, a repository git can't read, a bad manifest) never print a stack; an error skillfleet
- * did not expect does, with SKILLFLEET_DEBUG=1.
+ * wrong name, a repository git can't read, a bad manifest) never print a stack; an error fleetrc
+ * did not expect does, with FLEETRC_DEBUG=1.
  */
 function explain(error: unknown): { message: string; expected: boolean } {
   if (
@@ -1535,12 +1543,12 @@ main().then(
     const { message, expected } = explain(error);
     // Under --json, a failure is a document too.
     if (json) emit({ ok: false, error: message });
-    const at = process.env.SKILLFLEET_TIMER ? `${new Date().toISOString()} ` : "";
-    if (expected) console.error(`${at}skillfleet: ${message}`);
-    else if (process.env.SKILLFLEET_DEBUG) console.error(error);
+    const at = process.env.FLEETRC_TIMER ? `${new Date().toISOString()} ` : "";
+    if (expected) console.error(`${at}fleetrc: ${message}`);
+    else if (process.env.FLEETRC_DEBUG) console.error(error);
     else
       console.error(
-        `${at}skillfleet: unexpected error: ${message}\n  run again with SKILLFLEET_DEBUG=1 for the stack trace, and report it at https://github.com/onmax/skillfleet/issues`,
+        `${at}fleetrc: unexpected error: ${message}\n  run again with FLEETRC_DEBUG=1 for the stack trace, and report it at https://github.com/onmax/fleetrc/issues`,
       );
     process.exitCode = 1;
   },

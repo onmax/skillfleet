@@ -232,12 +232,12 @@ export function changedFiles(before: Hashes, after: Hashes): string[] {
 
 export const sameTree = (a: Hashes, b: Hashes) => changedFiles(a, b).length === 0;
 
-/** Files copied by this process. With SKILLFLEET_DEBUG_COPIES, the count goes to that file at exit. */
+/** Files copied by this process. With FLEETRC_DEBUG_COPIES, the count goes to that file at exit. */
 let copiedFiles = 0;
 export const countCopies = (files: number) => {
   copiedFiles += files;
 };
-const copiesLog = process.env.SKILLFLEET_DEBUG_COPIES;
+const copiesLog = process.env.FLEETRC_DEBUG_COPIES;
 if (copiesLog) process.on("exit", () => appendFileSync(copiesLog, `${copiedFiles}\n`));
 
 /**
@@ -458,7 +458,7 @@ export function readJson(path: string): unknown {
   }
 }
 
-/** `readJson` for records skillfleet rebuilds anyway (last run, fleet cache, sessions): a corrupt one reads as missing. */
+/** `readJson` for records fleetrc rebuilds anyway (last run, fleet cache, sessions): a corrupt one reads as missing. */
 export function readJsonOrNothing(path: string): unknown {
   try {
     return readJson(path);

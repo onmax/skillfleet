@@ -1,13 +1,13 @@
-// Installs skillfleet from its packed tarball, points it at a local git source with `init`, and
+// Installs fleetrc from its packed tarball, points it at a local git source with `init`, and
 // runs the session hooks init wrote into Claude Code's and Codex's files the way the agents do:
 // through a shell, or for Claude Code's exec form on Windows as node and args with no shell, from
 // a parent process that exits as soon as the hook does. The sync each hook
 // starts must outlive both and link the skill that landed upstream. Then a fresh attempt starts no
-// second sync, init wrote no prompt hook, and `hook remove` takes skillfleet's entries out.
+// second sync, init wrote no prompt hook, and `hook remove` takes fleetrc's entries out.
 //
-//   pnpm --filter skillfleet build
-//   pnpm pack --out skillfleet.tgz
-//   node .github/scripts/hook-e2e.mjs skillfleet.tgz
+//   pnpm --filter fleetrc build
+//   pnpm pack --out fleetrc.tgz
+//   node .github/scripts/hook-e2e.mjs fleetrc.tgz
 //
 // Everything lives under a throwaway HOME, and nothing touches the OS scheduler, so it runs
 // outside CI too.
@@ -18,16 +18,16 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const tarball = process.argv[2] && resolve(process.argv[2]);
-assert.ok(tarball && existsSync(tarball), "pass the path of the packed skillfleet tarball");
+assert.ok(tarball && existsSync(tarball), "pass the path of the packed fleetrc tarball");
 
 const SYNC_MS = 120_000;
-const root = mkdtempSync(join(tmpdir(), "skillfleet-hook-e2e-"));
+const root = mkdtempSync(join(tmpdir(), "fleetrc-hook-e2e-"));
 const home = join(root, "home");
 const prefix = join(root, "prefix");
 const bare = join(root, "remotes", "vendor.git");
 const work = join(root, "upstream", "vendor");
-const manifestFile = join(root, "manifest", ".skillfleet", "manifest.json");
-const stateDir = join(home, ".local", "state", "skillfleet");
+const manifestFile = join(root, "manifest", ".fleetrc", "manifest.json");
+const stateDir = join(home, ".local", "state", "fleetrc");
 const claudeSkills = join(home, ".claude", "skills");
 
 const env = { ...process.env };
@@ -56,19 +56,19 @@ const git = (cwd, ...args) =>
   execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
 let cli;
-function skillfleet(...args) {
+function fleetrc(...args) {
   const result = spawnSync(process.execPath, [cli, ...args], {
     encoding: "utf8",
     env,
     cwd: home,
     windowsHide: true,
   });
-  step(`skillfleet ${args.join(" ")} -> exit ${result.status}`);
+  step(`fleetrc ${args.join(" ")} -> exit ${result.status}`);
   return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
 const lastRun = () => JSON.parse(readFileSync(join(stateDir, "last-run.json"), "utf8"));
-const logFile = join(stateDir, "logs", "skillfleet-sync.log");
+const logFile = join(stateDir, "logs", "fleetrc-sync.log");
 const startedSyncs = () =>
   existsSync(logFile)
     ? readFileSync(logFile, "utf8")
@@ -76,13 +76,13 @@ const startedSyncs = () =>
         .filter((line) => line.endsWith(": starting a sync"))
     : [];
 
-/** The entry skillfleet wrote for `event` into an agent's hooks file. */
+/** The entry fleetrc wrote for `event` into an agent's hooks file. */
 function hookEntry(file, event) {
   const raw = JSON.parse(readFileSync(file, "utf8"));
   const entries = (raw.hooks?.[event] ?? []).flatMap((group) => group.hooks ?? []);
   const line = (entry) => [entry.command, ...(entry.args ?? [])].join(" ");
   const own = entries.filter((entry) => / hook run /.test(line(entry)));
-  assert.equal(own.length, 1, `${file} has ${own.length} skillfleet ${event} hooks`);
+  assert.equal(own.length, 1, `${file} has ${own.length} fleetrc ${event} hooks`);
   return own[0];
 }
 
@@ -140,7 +140,7 @@ try {
     { encoding: "utf8", cwd: prefix },
   );
   assert.equal(npm.status, 0, `npm install failed:\n${npm.stdout}\n${npm.stderr}`);
-  cli = join(prefix, "node_modules", "skillfleet", "dist", "cli.mjs");
+  cli = join(prefix, "node_modules", "fleetrc", "dist", "cli.mjs");
 
   step("a throwaway HOME with Claude Code and Codex, a local git source and a manifest");
   for (const dir of [".claude", ".codex", ".agents"])
@@ -164,13 +164,13 @@ try {
     `${JSON.stringify({ agents: ["claude-code", "codex"], sources: [{ id: "vendor", git: bare }] }, null, 2)}\n`,
   );
 
-  const init = skillfleet("init", manifestFile);
+  const init = fleetrc("init", manifestFile);
   console.log(init.stdout, init.stderr);
   assert.equal(init.code, 0, "init failed");
-  assert.match(init.stdout, /^Claude Code: added skillfleet's hook/m);
-  assert.match(init.stdout, /^Codex: added skillfleet's hook/m);
+  assert.match(init.stdout, /^Claude Code: added fleetrc's hook/m);
+  assert.match(init.stdout, /^Codex: added fleetrc's hook/m);
   assert.doesNotMatch(init.stdout, /^installed a /m, "init installed a timer");
-  const status = JSON.parse(skillfleet("status", "--json").stdout);
+  const status = JSON.parse(fleetrc("status", "--json").stdout);
   assert.deepEqual(status.trigger, { hooks: ["claude-code", "codex"], timer: false });
 
   for (const [agent, file] of [
@@ -213,7 +213,7 @@ try {
     assert.equal(raw.hooks.UserPromptSubmit, undefined, `${file} has a prompt hook`);
   }
 
-  const removal = skillfleet("hook", "remove");
+  const removal = fleetrc("hook", "remove");
   assert.equal(removal.code, 0, removal.stderr);
   for (const file of [join(home, ".claude", "settings.json"), join(home, ".codex", "hooks.json")])
     assert.doesNotMatch(readFileSync(file, "utf8"), / hook run /, `${file} still runs the hook`);

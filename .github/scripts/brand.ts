@@ -41,7 +41,7 @@ const style = (t: Theme) =>
 // The logo and favicons: the mark on a rounded tile, light by default and dark where the reader prefers it.
 const logo = (size: number, rx = 28) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 128 128" role="img" aria-labelledby="t">
-<title id="t">skillfleet</title>
+<title id="t">fleetrc</title>
 <style>${style(light)}@media (prefers-color-scheme:dark){${style(dark)}}</style>
 <rect class="bg" width="128" height="128" rx="${rx}"/>
 ${mark}
@@ -54,7 +54,7 @@ const font = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Ar
 const mono = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 // On the right, the fleet: a row per machine, a column per agent, and a sail where its skills are current. One cell is
-// held, because skillfleet keeps a skill you edited instead of overwriting it.
+// held, because fleetrc keeps a skill you edited instead of overwriting it.
 const machines = [
   ["laptop", "macOS"],
   ["desktop", "Windows"],
@@ -99,7 +99,7 @@ const fleet = (t: Theme) => {
 const banner = (
   t: Theme,
 ) => `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-labelledby="t">
-<title id="t">skillfleet: the same skills on every agent and every machine, synced when an agent session starts</title>
+<title id="t">fleetrc: the same skills on every agent and every machine, synced when an agent session starts</title>
 <style>${style(t)}</style>
 <clipPath id="frame"><rect width="1280" height="400" rx="24"/></clipPath>
 <g clip-path="url(#frame)">
@@ -109,11 +109,11 @@ ${fleet(t)}
 <g transform="translate(76 70) scale(.62)">
 ${mark}
 </g>
-<text x="172" y="146" fill="${t.fg}" font-family="${font}" font-size="88" font-weight="700" letter-spacing="-3">skillfleet</text>
+<text x="172" y="146" fill="${t.fg}" font-family="${font}" font-size="88" font-weight="700" letter-spacing="-3">fleetrc</text>
 <text x="80" y="200" fill="${t.muted}" font-family="${font}" font-size="27">The same skills on every agent and every machine.</text>
 <g font-family="${mono}" font-size="22">
-<text x="80" y="286" fill="${t.faint}">$ <tspan fill="${t.fg}">npx skillfleet init</tspan> <tspan fill="${t.lead}">onmax/skills</tspan></text>
-<text x="80" y="326" fill="${t.faint}">$ <tspan fill="${t.fg}">skillfleet fleet sync</tspan>  # every machine</text>
+<text x="80" y="286" fill="${t.faint}">$ <tspan fill="${t.fg}">npx fleetrc init</tspan> <tspan fill="${t.lead}">onmax/skills</tspan></text>
+<text x="80" y="326" fill="${t.faint}">$ <tspan fill="${t.fg}">fleetrc fleet sync</tspan>  # every machine</text>
 </g>
 </g>
 </svg>

@@ -26,6 +26,7 @@ import {
 import { fetchClone, gitUrl, repoKey } from "./gitcache.ts";
 import { globBase } from "./glob.ts";
 import {
+  checkedOutPath,
   defaultSourceId,
   editManifest,
   type InPlaceSource,
@@ -62,21 +63,23 @@ export function manifestToEdit(
 ): ManifestTarget {
   const remote = remoteManifest(spec);
   if (!remote) return { file: loaded.root.file, push: false };
+  // The file the manifest was read from, which may be the old name's default (legacy.ts).
+  const path = checkedOutPath(remote.path, loaded.root.file);
   const key = repoKey(remote.repo);
   for (const source of loaded.root.sources)
     if (source.kind === "clone" && repoKey(source.git) === key) {
-      const file = join(source.path, remote.path);
+      const file = join(source.path, path);
       if (existsSync(file)) return { file, push: true };
     }
   throw new UserError(
-    `the manifest is a copy of the repository ${gitUrl(remote.repo)}, which the next sync fetches again, so skillfleet does not change it. ${change} in ${remote.path} there and push it, or clone it as a source with a "path" to let skillfleet edit the clone.`,
+    `the manifest is a copy of the repository ${gitUrl(remote.repo)}, which the next sync fetches again, so fleetrc does not change it. ${change} in ${path} there and push it, or clone it as a source with a "path" to let fleetrc edit the clone.`,
   );
 }
 
 interface Located {
   loaded: LoadedManifest;
   state: State;
-  /** The skill's name as skillfleet keeps it, which may differ from the typed one in case or Unicode form. */
+  /** The skill's name as fleetrc keeps it, which may differ from the typed one in case or Unicode form. */
   name: string;
   source: Source;
   /** The skill's entry under "forks", by the key the manifest gives it. */
@@ -99,7 +102,7 @@ async function locate(spec: string, typed: string): Promise<Located> {
     state.skills[name]?.source ??
     Object.entries(state.sources).find(([, source]) => source.pending[name])?.[0];
   const source = loaded.sources.find((candidate) => candidate.id === owner);
-  if (!source) throw new UserError(`no skill "${typed}" is linked; run \`skillfleet list\``);
+  if (!source) throw new UserError(`no skill "${typed}" is linked; run \`fleetrc list\``);
   const key = findName(Object.keys(loaded.root.forks), name);
   const fork = key === undefined ? undefined : { key, fork: loaded.root.forks[key]! };
   return { loaded, state, name, source, fork };
@@ -124,7 +127,7 @@ export function personalSkillsDir(source: InPlaceSource): string {
 
 /**
  * Throws unless `path`, where it exists, resolves inside the folder `root`: a link in a repository
- * may lead anywhere on this machine, and skillfleet reads and writes only inside it. Where `path`
+ * may lead anywhere on this machine, and fleetrc reads and writes only inside it. Where `path`
  * does not exist yet, its nearest existing folder is checked, which is where it would be made.
  */
 export function confine(root: string, path: string, what = "it") {
@@ -139,7 +142,7 @@ export function confine(root: string, path: string, what = "it") {
   }
   if (real === undefined || !inside(realpathSync(root), real))
     throw new UserError(
-      `${tildify(path)} leads out of ${tildify(root)} through a link, so skillfleet does not ${what}`,
+      `${tildify(path)} leads out of ${tildify(root)} through a link, so fleetrc does not ${what}`,
     );
 }
 
@@ -164,7 +167,7 @@ interface Side {
  * so the headers read `local/<name>/SKILL.md` rather than store paths.
  */
 async function diffDirs(name: string, from: Side, to: Side): Promise<string> {
-  const scratch = mkdtempSync(join(tmpdir(), "skillfleet-diff-"));
+  const scratch = mkdtempSync(join(tmpdir(), "fleetrc-diff-"));
   try {
     for (const side of [from, to]) {
       const copy = join(scratch, side.label, name);
@@ -191,7 +194,7 @@ async function diffDirs(name: string, from: Side, to: Side): Promise<string> {
 }
 
 /**
- * Throws for a fork of an index or npm source, which an older skillfleet recorded: they have no
+ * Throws for a fork of an index or npm source, which an older fleetrc recorded: they have no
  * history to compare with.
  */
 function gitFork(loaded: LoadedManifest, name: string, fork: Fork) {
@@ -200,7 +203,7 @@ function gitFork(loaded: LoadedManifest, name: string, fork: Fork) {
     loaded.sources.some((source) => source.kind === "index" && source.index === fork.from)
   )
     throw new UserError(
-      `${name} was forked from ${fork.from}, which is not a git repository, so skillfleet has no upstream version to compare with; compare by hand, or fork it again from a git source`,
+      `${name} was forked from ${fork.from}, which is not a git repository, so fleetrc has no upstream version to compare with; compare by hand, or fork it again from a git source`,
     );
 }
 
@@ -280,7 +283,7 @@ export function forkLines(state: State): string[] {
     .filter(([, fork]) => fork.files.length > 0)
     .map(
       ([name]) =>
-        `${name}: upstream changed since you forked it; \`skillfleet diff ${name}\` / \`skillfleet merge ${name}\``,
+        `${name}: upstream changed since you forked it; \`fleetrc diff ${name}\` / \`fleetrc merge ${name}\``,
     );
 }
 
@@ -316,7 +319,7 @@ export function conflictLines(state: State): string[] {
     return files.length === 0
       ? []
       : [
-          `${name}: unresolved merge conflicts in ${files.join(", ")} (${tildify(conflict.dir)}); resolve them, then run \`skillfleet merge ${name}\``,
+          `${name}: unresolved merge conflicts in ${files.join(", ")} (${tildify(conflict.dir)}); resolve them, then run \`fleetrc merge ${name}\``,
         ];
   });
 }
@@ -337,7 +340,7 @@ function diffVendored(state: State, source: Source, name: string): Promise<strin
   );
 }
 
-/** `skillfleet diff <skill>`: local edits against upstream, or a pending update against what is installed. */
+/** `fleetrc diff <skill>`: local edits against upstream, or a pending update against what is installed. */
 export async function diffSkill(spec: string, typed: string): Promise<string> {
   const { loaded, state, source, name, fork } = await locate(spec, typed);
   if (fork) {
@@ -354,7 +357,7 @@ export async function diffSkill(spec: string, typed: string): Promise<string> {
 }
 
 /**
- * `skillfleet diff`: every update a source is holding, as the last sync left them. A vendored
+ * `fleetrc diff`: every update a source is holding, as the last sync left them. A vendored
  * source holds skills one by one; a working clone in review mode holds the commits it has not
  * merged from its upstream branch.
  */
@@ -470,7 +473,7 @@ async function mergeTrees(
         ? writeSidecar(
             at,
             Buffer.from(
-              `upstream changed ${file}, which is inside ${folder}, a link here; skillfleet does not write through links. Bring in upstream's change by hand, then delete this file and run \`skillfleet merge\` again.\n`,
+              `upstream changed ${file}, which is inside ${folder}, a link here; fleetrc does not write through links. Bring in upstream's change by hand, then delete this file and run \`fleetrc merge\` again.\n`,
             ),
             ".upstream-conflict",
           )
@@ -478,7 +481,7 @@ async function mergeTrees(
           ? writeSidecar(
               at,
               Buffer.from(
-                `upstream deleted ${file}, which you changed. Keep your copy or delete it, then delete this file and run \`skillfleet merge\` again.\n`,
+                `upstream deleted ${file}, which you changed. Keep your copy or delete it, then delete this file and run \`fleetrc merge\` again.\n`,
               ),
               ".upstream-deleted",
             )
@@ -523,7 +526,7 @@ async function mergeTrees(
       conflict(file, ub);
       continue;
     }
-    const scratch = mkdtempSync(join(tmpdir(), "skillfleet-merge-"));
+    const scratch = mkdtempSync(join(tmpdir(), "fleetrc-merge-"));
     try {
       writeFileSync(join(scratch, "base"), bb);
       writeFileSync(join(scratch, "upstream"), ub);
@@ -562,7 +565,7 @@ async function mergeTrees(
   return result;
 }
 
-/** `skillfleet merge <skill>`: brings upstream changes into an edited copy or a fork. */
+/** `fleetrc merge <skill>`: brings upstream changes into an edited copy or a fork. */
 export async function mergeSkill(
   spec: string,
   typed: string,
@@ -576,7 +579,7 @@ export async function mergeSkill(
     const open = unresolvedFiles(earlier);
     if (open.length > 0)
       throw new UserError(
-        `${name} still has merge conflicts in ${open.join(", ")} (${tildify(earlier.dir)}); resolve the markers (and remove the .upstream files), then run \`skillfleet merge ${name}\` again`,
+        `${name} still has merge conflicts in ${open.join(", ")} (${tildify(earlier.dir)}); resolve the markers (and remove the .upstream files), then run \`fleetrc merge ${name}\` again`,
       );
     resolved = true;
     if (!dryRun) {
@@ -627,7 +630,7 @@ export async function mergeSkill(
   const sourceState = state.sources[source.id]!;
   if (!existsSync(store.upstream)) {
     if (resolved) return { merged: [], conflicts: [], resolved, into: store.live };
-    throw new UserError(`${name} has no upstream change to merge; \`skillfleet sync\` fetches one`);
+    throw new UserError(`${name} has no upstream change to merge; \`fleetrc sync\` fetches one`);
   }
   const hashes = hashDir(store.upstream);
   const pending = pendingGitBase(sourceState.pending[name], hashes);
@@ -648,14 +651,14 @@ export async function mergeSkill(
 /** What `fork` did, or would do in a dry run. */
 export interface Forked {
   name: string;
-  /** The copy skillfleet kept, which moves into the personal source. */
+  /** The copy fleetrc kept, which moves into the personal source. */
   from: string;
   to: string;
   fork: Fork;
   manifest: ManifestTarget;
 }
 
-/** `skillfleet fork <skill>`: moves a vendored skill into the personal repository and records where it came from. */
+/** `fleetrc fork <skill>`: moves a vendored skill into the personal repository and records where it came from. */
 export async function forkSkill(
   spec: string,
   typed: string,
@@ -665,7 +668,7 @@ export async function forkSkill(
   if (!isVendored(source)) throw new UserError(`${name} already lives in ${source.id}`);
   if (source.kind !== "git")
     throw new UserError(
-      `fork follows a skill's upstream through its git history, and ${source.id} is ${source.kind === "npm" ? "an npm package" : "an index site"}, which has none. To edit ${name} where it is, edit it in place: sync keeps your edits and holds upstream changes for \`skillfleet merge ${name}\``,
+      `fork follows a skill's upstream through its git history, and ${source.id} is ${source.kind === "npm" ? "an npm package" : "an index site"}, which has none. To edit ${name} where it is, edit it in place: sync keeps your edits and holds upstream changes for \`fleetrc merge ${name}\``,
     );
   const personal = personalSource(loaded.sources);
   if (!personal)
@@ -674,24 +677,24 @@ export async function forkSkill(
   if (lstat(to)) throw new UserError(`${tildify(to)} already exists`);
   const store = storePaths(paths.store(source.id), name);
   if (!existsSync(store.live))
-    throw new UserError(`${name} has no copy on this machine yet; run \`skillfleet sync\``);
+    throw new UserError(`${name} has no copy on this machine yet; run \`fleetrc sync\``);
   const sourceState = state.sources[source.id]!;
   const installed = sourceState.skills[name];
   if (existsSync(store.upstream)) {
     const pending = pendingGitBase(sourceState.pending[name], hashDir(store.upstream));
     if (!pending)
       throw new UserError(
-        `cannot verify the pending git update of ${name}; run \`skillfleet sync\` online before forking`,
+        `cannot verify the pending git update of ${name}; run \`fleetrc sync\` online before forking`,
       );
     if (pending.path !== installed?.path)
       throw new UserError(
-        `${name} moved upstream to ${pending.path}; run \`skillfleet merge ${name}\` before forking`,
+        `${name} moved upstream to ${pending.path}; run \`fleetrc merge ${name}\` before forking`,
       );
   }
   const base = installed?.commit === undefined ? sourceState.commit : installed.commit;
   if (!base || installed?.path === undefined)
     throw new UserError(
-      `cannot verify the git base of ${name}; run \`skillfleet sync\` online before forking`,
+      `cannot verify the git base of ${name}; run \`fleetrc sync\` online before forking`,
     );
   const fork: Fork = {
     from: source.git,
@@ -733,7 +736,7 @@ export async function forkSkill(
   return result;
 }
 
-/** `skillfleet adopt <path>`: moves a hand-made skill folder into the personal repository. */
+/** `fleetrc adopt <path>`: moves a hand-made skill folder into the personal repository. */
 export async function adoptSkill(
   spec: string,
   path: string,

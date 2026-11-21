@@ -1,5 +1,5 @@
-// Round two of trying to break skillfleet, against the integration branch that fixed round one.
-// Each test asserts what skillfleet should do; a failing test is a break still open. Every run uses
+// Round two of trying to break fleetrc, against the integration branch that fixed round one.
+// Each test asserts what fleetrc should do; a failing test is a break still open. Every run uses
 // the fixture's temporary HOME, and every scheduler call goes to the fixture's fake.
 import { spawn } from "node:child_process";
 import {
@@ -60,7 +60,7 @@ if (args[0] === "--") args.shift();
 const run = spawnSync("sh", ["-c", args[1]], { stdio: "inherit" });
 process.exit(run.status ?? 1);`,
   );
-  if (isWindows) return { SKILLFLEET_SSH: script };
+  if (isWindows) return { FLEETRC_SSH: script };
   const ssh = join(dir, "ssh");
   writeFileSync(ssh, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`);
   chmodSync(ssh, 0o755);
@@ -219,7 +219,7 @@ describe("a sync killed or left without its records", () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "tool"));
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "vendor", git: vendor.url }],
       }),
@@ -292,8 +292,8 @@ describe("the timer", () => {
       sources: [{ id: "vendor", git: vendor.url }],
       hooks: [{ name: "slow", run: `"${process.execPath}" "${script}"`, on: ["vendor:**"] }],
     });
-    mkdirSync(m.at(".config/skillfleet"), { recursive: true });
-    writeFileSync(m.at(".config/skillfleet/config.json"), JSON.stringify({ manifest }));
+    mkdirSync(m.at(".config/fleetrc"), { recursive: true });
+    writeFileSync(m.at(".config/fleetrc/config.json"), JSON.stringify({ manifest }));
     const manual = spawn(process.execPath, [cli, "sync"], {
       cwd: m.home,
       env: m.env,
@@ -304,7 +304,7 @@ describe("the timer", () => {
       await new Promise((done) => setTimeout(done, 100));
     expect(existsSync(log)).toBe(true);
     try {
-      const timer = await m.runWith({ env: { SKILLFLEET_TIMER: "1" } }, "sync");
+      const timer = await m.runWith({ env: { FLEETRC_TIMER: "1" } }, "sync");
       // systemd and launchd record a non-zero exit, and doctor then reports the timer as failing.
       expect(timer.code, timer.stdout + timer.stderr).toBe(0);
     } finally {
@@ -317,14 +317,14 @@ describe("the timer", () => {
     () => {
       const error = new TimerError(
         osScheduleErrors.SCHEDULE_OS_COMMAND_FAILED({
-          command: "systemctl --user show skillfleet-sync.service skillfleet-sync.timer",
+          command: "systemctl --user show fleetrc-sync.service fleetrc-sync.timer",
           exitCode: 127,
           output: "spawn systemctl ENOENT",
         }),
       );
       expect(error.message).not.toContain("ENOENT");
       expect(error.message).toMatch(/systemd/);
-      expect(error.message).toContain("skillfleet hook install");
+      expect(error.message).toContain("fleetrc hook install");
     },
   );
 });
@@ -390,9 +390,9 @@ describe("what users paste", () => {
     ).toEqual(expected);
   });
 
-  it("a repository, a page link or a folder link means .skillfleet/manifest.json; <repo>//<file> names any file", () => {
+  it("a repository, a page link or a folder link means .fleetrc/manifest.json; <repo>//<file> names any file", () => {
     const at = (spec: string) => remoteManifest(spec, "/nonexistent");
-    const file = ".skillfleet/manifest.json";
+    const file = ".fleetrc/manifest.json";
     expect(at("org/team")).toEqual({ repo: "org/team", path: file });
     expect(at("github:org/team")).toEqual({ repo: "github:org/team", path: file });
     expect(at("gitlab:group/team")).toEqual({ repo: "gitlab:group/team", path: file });
@@ -438,7 +438,7 @@ describe("what users paste", () => {
 
   it("R2-17. PATH advice for csh and nushell users is in their shell's syntax and file", () => {
     for (const shell of ["/bin/tcsh", "/usr/bin/nu"]) {
-      const advice = pathAdvice("/home/u/.local/state/skillfleet/bin", shell, "linux");
+      const advice = pathAdvice("/home/u/.local/state/fleetrc/bin", shell, "linux");
       expect(advice, shell).not.toContain("~/.profile");
       expect(advice, shell).not.toContain("export PATH=");
     }

@@ -309,7 +309,7 @@ function escapingSkills(
 
 /**
  * Discovers skills in a folder through the `skills` package, limited to the `skills` glob's base
- * folder. Without `followLinks` (a folder skillfleet fetched, or a working clone), what configures
+ * folder. Without `followLinks` (a folder fleetrc fetched, or a working clone), what configures
  * discovery must stay inside `bound`, the source; the caller then leaves out `escapingSkills`.
  */
 async function discover(
@@ -456,7 +456,7 @@ function unfetchedSubmodules(
     warnings.push(
       source.kind === "clone"
         ? `${source.id}: ${path} is a git submodule that is not checked out, so its skills are not linked; run \`git submodule update --init\` in ${source.path}`
-        : `${source.id}: ${path} is a git submodule, which skillfleet does not fetch, so its skills are not linked`,
+        : `${source.id}: ${path} is a git submodule, which fleetrc does not fetch, so its skills are not linked`,
     );
   }
 }
@@ -905,7 +905,7 @@ async function nameClashes(
   const found = collisions(entries.map((entry) => entry.path));
   for (const { path, kept } of found)
     warnings.push(
-      `${source.id}: ${kept} and ${path} differ only in case or Unicode form, so macOS and Windows check them out as one folder; skillfleet uses ${kept} there, and git's view of the other is not a local edit. Rename one of them upstream`,
+      `${source.id}: ${kept} and ${path} differ only in case or Unicode form, so macOS and Windows check them out as one folder; fleetrc uses ${kept} there, and git's view of the other is not a local edit. Rename one of them upstream`,
     );
   const clashes = new Map<string, string>();
   if (found.length === 0) return clashes;
@@ -1708,7 +1708,7 @@ async function fetchVendored(
   const rebuilt = rebuildRecords(state, ctx.storeDir);
   if (rebuilt.length > 0)
     out.warnings.push(
-      `${source.id}: state.json had no install record of ${rebuilt.join(", ")}, so skillfleet rebuilt it from the copy it kept in the store`,
+      `${source.id}: state.json had no install record of ${rebuilt.join(", ")}, so fleetrc rebuilt it from the copy it kept in the store`,
     );
   const firstRun = Object.keys(state.skills).length === 0;
   // Local edits are checked on every run, online or not.
@@ -1826,7 +1826,7 @@ async function fetchVendored(
       return out;
     }
     // In the store, on its file system, so what is staged is renamed into place, not copied.
-    if (ctx.dryRun) staging = mkdtempSync(join(tmpdir(), "skillfleet-stage-"));
+    if (ctx.dryRun) staging = mkdtempSync(join(tmpdir(), "fleetrc-stage-"));
     else {
       staging = join(ctx.storeDir, `.stage-${process.pid}`);
       rmSync(staging, { recursive: true, force: true });
@@ -2209,7 +2209,7 @@ function applyVendored(
       if (files.length > 0) {
         out.edited.push({ skill: skill.name, files });
         out.warnings.push(
-          `${source.id}: ${skill.name} has no install record and differs from upstream, so it is kept as a local edit; see \`skillfleet diff ${skill.name}\``,
+          `${source.id}: ${skill.name} has no install record and differs from upstream, so it is kept as a local edit; see \`fleetrc diff ${skill.name}\``,
         );
       }
       continue;

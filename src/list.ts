@@ -1,4 +1,4 @@
-// `skillfleet list --json`: the skills linked on this machine, for programs built on skillfleet. It
+// `fleetrc list --json`: the skills linked on this machine, for programs built on fleetrc. It
 // reads state.json alone, with no manifest and no network, so entry.ts runs it without the rest of
 // the CLI. The shape is a contract: a later version only adds fields, and bumps `version` for any
 // other change.

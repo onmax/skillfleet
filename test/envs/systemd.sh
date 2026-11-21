@@ -10,14 +10,14 @@ docker image inspect sf-u2-ubuntu22 >/dev/null 2>&1 || docker build -q -t sf-u2-
 docker build -q -t sf-u2-systemd -f "$here/docker/systemd.Dockerfile" "$here/docker" >/dev/null
 docker rm -f sf-u2-systemd >/dev/null 2>&1
 docker run -d -t --name sf-u2-systemd --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock \
-  -e container=docker -v "$tgz:/pkg/skillfleet.tgz:ro" sf-u2-systemd >/dev/null
+  -e container=docker -v "$tgz:/pkg/fleetrc.tgz:ro" sf-u2-systemd >/dev/null
 sleep 8
 docker exec sf-u2-systemd systemctl is-system-running
-SF=/home/ubuntu/.local/state/skillfleet/bin/skillfleet
+SF=/home/ubuntu/.local/state/fleetrc/bin/fleetrc
 docker exec sf-u2-systemd su - ubuntu -c '
 mkdir -p ~/.claude ~/l/s1 && printf -- "---\nname: s1\ndescription: d\n---\n" > ~/l/s1/SKILL.md
 echo "{\"sources\":[{\"local\":\"$HOME/l\"}]}" > ~/m.json
-npx -y --package /pkg/skillfleet.tgz -- skillfleet init ~/m.json 2>&1 | tail -n 3
+npx -y --package /pkg/fleetrc.tgz -- fleetrc init ~/m.json 2>&1 | tail -n 3
 echo "--- doctor, linger off, logged in"; '"$SF"' doctor
 echo "--- timer install"; '"$SF"' timer install; echo "exit $?"
 echo "--- timer status"; '"$SF"' timer status; echo "exit $?"'

@@ -214,5 +214,5 @@ export function promptHook(
   if (fresh.length > 0) writeJson(file, { ...session, announced: [...announced, ...fresh] });
   if (fresh.length === 0) return "";
   const one = fresh.length === 1;
-  return `skillfleet: ${one ? "a new skill arrived" : `${fresh.length} new skills arrived`} after this session started and ${one ? "is" : "are"} available now: ${fresh.join(", ")}. Use ${one ? "it" : "them"} like any other skill, with the Skill tool.`;
+  return `fleetrc: ${one ? "a new skill arrived" : `${fresh.length} new skills arrived`} after this session started and ${one ? "is" : "are"} available now: ${fresh.join(", ")}. Use ${one ? "it" : "them"} like any other skill, with the Skill tool.`;
 }

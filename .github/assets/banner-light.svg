@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-labelledby="t">
-<title id="t">skillfleet: the same skills on every agent and every machine, synced when an agent session starts</title>
+<title id="t">fleetrc: the same skills on every agent and every machine, synced when an agent session starts</title>
 <style>.bg{fill:#f9f5ec}.fg{fill:#111b28;stroke:#111b28}.lead{fill:#2763d7;stroke:#2763d7}.hull{fill:#111b28}</style>
 <clipPath id="frame"><rect width="1280" height="400" rx="24"/></clipPath>
 <g clip-path="url(#frame)">
@@ -48,11 +48,11 @@
 <path class="fg" d="M88 98 V56 Q108.9 79.1 110 98 Z" stroke-width="5" stroke-linejoin="round"/>
 <rect class="hull" x="14" y="104" width="100" height="9" rx="4.5"/>
 </g>
-<text x="172" y="146" fill="#111b28" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="88" font-weight="700" letter-spacing="-3">skillfleet</text>
+<text x="172" y="146" fill="#111b28" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="88" font-weight="700" letter-spacing="-3">fleetrc</text>
 <text x="80" y="200" fill="#424e5e" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="27">The same skills on every agent and every machine.</text>
 <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22">
-<text x="80" y="286" fill="#5f6a77">$ <tspan fill="#111b28">npx skillfleet init</tspan> <tspan fill="#2763d7">onmax/skills</tspan></text>
-<text x="80" y="326" fill="#5f6a77">$ <tspan fill="#111b28">skillfleet fleet sync</tspan>  # every machine</text>
+<text x="80" y="286" fill="#5f6a77">$ <tspan fill="#111b28">npx fleetrc init</tspan> <tspan fill="#2763d7">onmax/skills</tspan></text>
+<text x="80" y="326" fill="#5f6a77">$ <tspan fill="#111b28">fleetrc fleet sync</tspan>  # every machine</text>
 </g>
 </g>
 </svg>

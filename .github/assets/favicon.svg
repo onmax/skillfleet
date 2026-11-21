@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 128 128" role="img" aria-labelledby="t">
-<title id="t">skillfleet</title>
+<title id="t">fleetrc</title>
 <style>.bg{fill:#f9f5ec}.fg{fill:#111b28;stroke:#111b28}.lead{fill:#2763d7;stroke:#2763d7}.hull{fill:#111b28}@media (prefers-color-scheme:dark){.bg{fill:#0c141f}.fg{fill:#f9f5ec;stroke:#f9f5ec}.lead{fill:#6a9cfb;stroke:#6a9cfb}.hull{fill:#f9f5ec}}</style>
 <rect class="bg" width="128" height="128" rx="28"/>
 <path class="lead" d="M18 98 V24 Q50.3 64.69999999999999 52 98 Z" stroke-width="5" stroke-linejoin="round"/>

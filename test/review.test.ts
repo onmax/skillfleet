@@ -275,7 +275,7 @@ describe("CX4. stale lock takeover admits one sync", () => {
    * they hold the lock.
    */
   function race(first: number, second: number, inner: number) {
-    dir = mkdtempSync(join(tmpdir(), "skillfleet-lock-"));
+    dir = mkdtempSync(join(tmpdir(), "fleetrc-lock-"));
     const file = join(dir, "sync.lock");
     writeFileSync(file, holder(1));
     const holders: number[] = [];
@@ -398,7 +398,7 @@ describe("CX7. names that are Object.prototype keys", () => {
   });
 
   it("CX7. file hashes keep __proto__ and constructor as files", () => {
-    const dir = mkdtempSync(join(tmpdir(), "skillfleet-proto-"));
+    const dir = mkdtempSync(join(tmpdir(), "fleetrc-proto-"));
     try {
       writeFiles(dir, { ["__proto__"]: "a", constructor: "b", "x/toString": "c" });
       const hashes = hashDir(dir);
@@ -411,7 +411,7 @@ describe("CX7. names that are Object.prototype keys", () => {
   });
 
   it("CX7. state.json keeps skills and sources named like Object.prototype keys", () => {
-    const dir = mkdtempSync(join(tmpdir(), "skillfleet-proto-"));
+    const dir = mkdtempSync(join(tmpdir(), "fleetrc-proto-"));
     const before = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = dir;
     try {
@@ -453,9 +453,9 @@ describe("CX8. an extended manifest names only remote repositories", () => {
   const alias = (m: Machine, to: string, key = "insteadOf") => {
     appendFileSync(
       join(m.root, "gitconfig"),
-      `[url "${to.replace(/\\/g, "/")}"]\n\t${key} = https://mirror.skillfleet.test/private.git\n`,
+      `[url "${to.replace(/\\/g, "/")}"]\n\t${key} = https://mirror.fleetrc.test/private.git\n`,
     );
-    return "https://mirror.skillfleet.test/private.git";
+    return "https://mirror.fleetrc.test/private.git";
   };
   it.each([
     { kind: "a path", spec: (url: string) => url },
@@ -474,9 +474,9 @@ describe("CX8. an extended manifest names only remote repositories", () => {
   ])("CX8. a team manifest's git source that is $kind is refused", async ({ spec }) => {
     const m = machine();
     const local = remote(m, "private", skills("skills/", "private"));
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
     writeFiles(join(m.root, "team"), {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         sources: [{ id: "team", git: spec(local.url, m) }],
       }),
     });
@@ -490,9 +490,9 @@ describe("CX8. an extended manifest names only remote repositories", () => {
   it("R7-15. a team manifest's insteadOf alias of a remote repository is allowed", async () => {
     const m = machine();
     const vendor = remote(m, "private", skills("skills/", "private"));
-    const team = join(m.root, "team", ".skillfleet", "manifest.json");
+    const team = join(m.root, "team", ".fleetrc", "manifest.json");
     writeFiles(join(m.root, "team"), {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         sources: [{ id: "team", git: alias(m, vendor.served) }],
       }),
     });
@@ -882,16 +882,16 @@ async function initWith(m: Machine, env: NodeJS.ProcessEnv, manifest: string): P
 
 /** A team manifest outside the root manifest that declares `source`, and a root that extends it. */
 function teamOf(m: Machine, team: object) {
-  writeFiles(join(m.root, "team"), { ".skillfleet/manifest.json": JSON.stringify(team) });
+  writeFiles(join(m.root, "team"), { ".fleetrc/manifest.json": JSON.stringify(team) });
   return m.manifest({
     agents: ["claude-code"],
-    extends: [join(m.root, "team", ".skillfleet", "manifest.json")],
+    extends: [join(m.root, "team", ".fleetrc", "manifest.json")],
     sources: [],
   });
 }
 
 describe("CX15. a team source is checked with the git config git itself uses", () => {
-  const team = "https://mirror.skillfleet.test/private.git";
+  const team = "https://mirror.fleetrc.test/private.git";
   it.each([
     {
       via: "GIT_CONFIG_COUNT",
@@ -972,33 +972,33 @@ describe("CX17. a team manifest's extends follows the team source rules", () => 
   function privateManifest(m: Machine) {
     const vendor = remote(m, "vendor", skills("skills/", "leak"));
     return remote(m, "private", {
-      ".skillfleet/manifest.json": JSON.stringify({ sources: [{ id: "leak", git: vendor.https }] }),
+      ".fleetrc/manifest.json": JSON.stringify({ sources: [{ id: "leak", git: vendor.https }] }),
     });
   }
 
   it.each([
     {
       kind: "a file: URL",
-      spec: (repo: string) => `${pathToFileURL(repo).href}//.skillfleet/manifest.json`,
+      spec: (repo: string) => `${pathToFileURL(repo).href}//.fleetrc/manifest.json`,
     },
     {
       kind: "a path to a repository",
-      spec: (repo: string) => `${repo}//.skillfleet/manifest.json`,
+      spec: (repo: string) => `${repo}//.fleetrc/manifest.json`,
     },
     { kind: "a bare repository", spec: (repo: string) => repo },
     {
       kind: "a manifest file on this machine",
-      spec: (repo: string) => join(repo, "..", "..", "private", ".skillfleet", "manifest.json"),
+      spec: (repo: string) => join(repo, "..", "..", "private", ".fleetrc", "manifest.json"),
     },
     {
       kind: "a relative path out of the team folder",
-      spec: () => "../../private/.skillfleet/manifest.json",
+      spec: () => "../../private/.fleetrc/manifest.json",
     },
   ])("CX17. a nested extends that is $kind is refused", async ({ spec }) => {
     const m = machine();
     const priv = privateManifest(m);
     writeFiles(join(m.root, "private"), {
-      ".skillfleet/manifest.json": read(join(priv.work, ".skillfleet", "manifest.json")),
+      ".fleetrc/manifest.json": read(join(priv.work, ".fleetrc", "manifest.json")),
     });
     const manifest = teamOf(m, { extends: [spec(priv.url)], sources: [] });
     const run = await init(m, manifest);
@@ -1012,12 +1012,12 @@ describe("CX17. a team manifest's extends follows the team source rules", () => 
     const otherTeam = remote(m, "otherteam", (url) => ({
       ...skills("tools/", "tool"),
       ...skills("extras/", "extra"),
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         sources: [{ id: "other", git: url, skills: "extras/*" }],
       }),
     }));
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         extends: ["../more.json", otherTeam.https],
         sources: [],
       }),
@@ -1035,17 +1035,17 @@ describe("CX17. a team manifest's extends follows the team source rules", () => 
     const m = machine();
     const priv = privateManifest(m);
     writeFiles(join(m.root, "private"), {
-      ".skillfleet/manifest.json": read(join(priv.work, ".skillfleet", "manifest.json")),
+      ".fleetrc/manifest.json": read(join(priv.work, ".fleetrc", "manifest.json")),
     });
     const team = remote(m, "team", {
-      ".skillfleet/manifest.json": JSON.stringify({ extends: ["./more.json"], sources: [] }),
+      ".fleetrc/manifest.json": JSON.stringify({ extends: ["./more.json"], sources: [] }),
     });
     if (!isWindows)
       commitLink(
         m,
         team.work,
-        ".skillfleet/more.json",
-        join(m.root, "private", ".skillfleet", "manifest.json"),
+        ".fleetrc/more.json",
+        join(m.root, "private", ".fleetrc", "manifest.json"),
       );
     const manifest = m.manifest({ agents: ["claude-code"], extends: [team.https], sources: [] });
     const run = await init(m, manifest);

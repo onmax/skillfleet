@@ -26,10 +26,10 @@ import { afterAll, afterEach } from "vite-plus/test";
 
 const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
   version: string;
-  bin: { skillfleet: string };
+  bin: { fleetrc: string };
 };
 export const version = pkg.version;
-export const cli = resolve(pkg.bin.skillfleet);
+export const cli = resolve(pkg.bin.fleetrc);
 export const isWindows = process.platform === "win32";
 
 const made: string[] = [];
@@ -82,12 +82,12 @@ export const AGENT_HOMES = [
 ];
 
 /**
- * The folders skillfleet links into for the agents in AGENT_HOMES. Codex reads ~/.agents/skills, so
+ * The folders fleetrc links into for the agents in AGENT_HOMES. Codex reads ~/.agents/skills, so
  * Gemini CLI, OpenCode, Copilot and Cursor, which read it too, get no links in their own folders.
  */
 export const AGENT_DIRS = [".agents/skills", ".claude/skills"];
 
-/** Own folders of the agents in AGENT_HOMES that read ~/.agents/skills, which skillfleet leaves empty. */
+/** Own folders of the agents in AGENT_HOMES that read ~/.agents/skills, which fleetrc leaves empty. */
 export const UNIVERSAL_DIRS = [
   ".config/opencode/skills",
   ".copilot/skills",
@@ -99,7 +99,7 @@ export const UNIVERSAL_DIRS = [
  * What the OS scheduler does for a test machine. Tests never reach the real one: every scheduler
  * command goes to test/guard/fake-scheduler.mjs, which records it.
  * - forbid: every call fails, and the test fails when it ends.
- * - refuse: every call fails, for tests of how skillfleet reports that.
+ * - refuse: every call fails, for tests of how fleetrc reports that.
  * - empty: reads answer as on a machine with no timer and linger off; changes fail the test.
  * - absent: systemd's commands answer as on Linux without systemd (a container): not installed.
  */
@@ -217,7 +217,7 @@ export function machine({
   home: homeName = "home",
   base = tmpdir(),
 }: { agents?: boolean; scheduler?: Scheduler; home?: string; base?: string } = {}): Machine {
-  const root = realpathSync(mkdtempSync(join(base, "skillfleet-e2e-")));
+  const root = realpathSync(mkdtempSync(join(base, "fleetrc-e2e-")));
   made.push(root);
   const schedulerLog = join(root, "scheduler-calls.jsonl");
   appendFileSync(schedulerLog, "");
@@ -229,7 +229,7 @@ export function machine({
   writeFileSync(
     gitConfig,
     [
-      "[user]\n\tname = skillfleet test\n\temail = test@example.com",
+      "[user]\n\tname = fleetrc test\n\temail = test@example.com",
       "[init]\n\tdefaultBranch = main",
       "[commit]\n\tgpgsign = false",
       "[core]\n\tautocrlf = false\n\tsymlinks = true",
@@ -265,14 +265,14 @@ export function machine({
     GIT_CEILING_DIRECTORIES: root,
     DO_NOT_TRACK: "1",
     NO_COLOR: "1",
-    // Every Node process the test starts, skillfleet and what it runs, loads the scheduler guard.
-    // Every Node process also resolves *.skillfleet.test to 127.0.0.1 (test-hosts.mjs).
+    // Every Node process the test starts, fleetrc and what it runs, loads the scheduler guard.
+    // Every Node process also resolves *.fleetrc.test to 127.0.0.1 (test-hosts.mjs).
     NODE_OPTIONS: ["scheduler-guard.mjs", "test-hosts.mjs"]
       .map((file) => `--import=${pathToFileURL(join(guardDir, file)).href}`)
       .join(" "),
-    SKILLFLEET_TEST_ROOT: root,
-    SKILLFLEET_TEST_SCHEDULER: scheduler,
-    SKILLFLEET_TEST_SCHEDULER_LOG: schedulerLog,
+    FLEETRC_TEST_ROOT: root,
+    FLEETRC_TEST_SCHEDULER: scheduler,
+    FLEETRC_TEST_SCHEDULER_LOG: schedulerLog,
   };
   for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
   gitRoots.set(basename(root), { root, env });
@@ -280,7 +280,7 @@ export function machine({
     root,
     home,
     env,
-    stateDir: join(home, ".local", "state", "skillfleet"),
+    stateDir: join(home, ".local", "state", "fleetrc"),
     scheduler,
     schedulerCalls: () =>
       read(schedulerLog)
@@ -301,7 +301,7 @@ export function machine({
         return JSON.parse(result.stdout) as T;
       } catch {
         throw new Error(
-          `skillfleet ${args.join(" ")} --json printed no JSON (exit ${result.code}):\n${result.stdout}\n${result.stderr}`,
+          `fleetrc ${args.join(" ")} --json printed no JSON (exit ${result.code}):\n${result.stdout}\n${result.stderr}`,
         );
       }
     },
@@ -313,7 +313,7 @@ export function machine({
         stdio: ["ignore", "pipe", "pipe"],
       }).trim(),
     manifest(content) {
-      const file = join(root, "manifest", ".skillfleet", "manifest.json");
+      const file = join(root, "manifest", ".fleetrc", "manifest.json");
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, `${JSON.stringify(content, null, 2)}\n`);
       return file;
@@ -324,7 +324,7 @@ export function machine({
 }
 
 /** The https URL prefix that each test machine's git config rewrites to its bare remotes. */
-const HTTPS_REMOTES = "https://git.skillfleet.test/";
+const HTTPS_REMOTES = "https://git.fleetrc.test/";
 
 /**
  * Machine roots by the first part of the URL path the git server below answers under: the folder
@@ -404,7 +404,7 @@ async function gitServer(): Promise<string> {
  * included, so a server a team manifest names goes by a name under it, which git's
  * `http.curloptResolve` and Node's test-hosts.mjs send to 127.0.0.1.
  */
-const TEST_DOMAIN = "skillfleet.test";
+const TEST_DOMAIN = "fleetrc.test";
 /** The git server's host name. */
 const GIT_SERVER_NAME = `git-server.${TEST_DOMAIN}`;
 
@@ -516,7 +516,7 @@ export const sha256 = (data: Uint8Array) => createHash("sha256").update(data).di
 export interface Http {
   /** The server on 127.0.0.1, a loopback address. */
   url: string;
-  /** The server as `<name>.skillfleet.test`, which is no loopback name and reaches 127.0.0.1. */
+  /** The server as `<name>.fleetrc.test`, which is no loopback name and reaches 127.0.0.1. */
   named(name: string): string;
   routes: Map<string, { body: Uint8Array | string; type: string }>;
   /** Paths the server redirects (302) to another URL. */
@@ -561,7 +561,7 @@ export async function http(): Promise<Http> {
 }
 
 /**
- * A test server's URL on 127.0.0.1 under the name `<name>.skillfleet.test`, which is no loopback
+ * A test server's URL on 127.0.0.1 under the name `<name>.fleetrc.test`, which is no loopback
  * name, so a team manifest may name it.
  */
 export const named = (url: string, name: string) =>
@@ -687,7 +687,7 @@ export const pathWith = (dir: string, env: NodeJS.ProcessEnv) =>
   [dir, env.PATH ?? env.Path ?? ""].join(delimiter);
 
 /**
- * A systemd that answers as one with skillfleet's units loaded once their files exist, and linger
+ * A systemd that answers as one with fleetrc's units loaded once their files exist, and linger
  * on. Its folder comes first on PATH and is inside the test's machine folder, so the scheduler
  * guard lets it run. Returns PATH with it first.
  */

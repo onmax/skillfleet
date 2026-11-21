@@ -153,7 +153,7 @@ export function staleBecause(holder: LockHolder): string | undefined {
   // Every lock since 0.0.1 says when its holder started; an older one can't tell a live sync from
   // another program, and none was ever released.
   if (holder.started === undefined && holder.ticks === undefined)
-    return `an older skillfleet wrote it`;
+    return `an older fleetrc wrote it`;
   if (holder.ticks !== undefined && sameBoot) {
     const ticks = processStartTicks(pid);
     if (ticks !== undefined && ticks !== holder.ticks) return `pid ${pid} is now another program`;
@@ -180,7 +180,7 @@ export class LockHeldError extends UserError {
   readonly pid: number;
   constructor(pid: number, where?: string, command = "sync", hint = "") {
     super(
-      `${command === "sync" ? "another skillfleet sync" : `skillfleet ${command}`} is running (pid ${pid}${where ? ` ${where}` : ""})${hint}`,
+      `${command === "sync" ? "another fleetrc sync" : `fleetrc ${command}`} is running (pid ${pid}${where ? ` ${where}` : ""})${hint}`,
     );
     this.pid = pid;
   }

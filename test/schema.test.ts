@@ -6,7 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { loadManifest, parseManifest } from "../src/manifest.ts";
 
 it("limits root hook globs without dropping sources from extensions that ignore those hooks", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "skillfleet-hook-globs-"));
+  const dir = mkdtempSync(join(tmpdir(), "fleetrc-hook-globs-"));
   try {
     const root = join(dir, "root.json");
     const team = join(dir, "team.json");
@@ -57,7 +57,7 @@ interface Schema {
 const schema = JSON.parse(readFileSync("schema.json", "utf8")) as Schema;
 
 const samples: Record<string, unknown> = {
-  $schema: "https://unpkg.com/skillfleet/schema.json",
+  $schema: "https://unpkg.com/fleetrc/schema.json",
   extends: ["./team.json"],
   agents: "all",
   sources: [],

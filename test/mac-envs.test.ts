@@ -1,4 +1,4 @@
-// Breaks found by running skillfleet on a real Mac under a throwaway HOME, and by a docs audit of
+// Breaks found by running fleetrc on a real Mac under a throwaway HOME, and by a docs audit of
 // the timer (MAC- and D-rows of the break plan). Most of them hit any OS; each case says what a user
 // should get.
 import { spawnSync } from "node:child_process";
@@ -37,7 +37,7 @@ const fakeNode = (dir: string) => {
 /** PATH for a run; Windows spells it Path, and the fixture sets both. */
 const pathEnv = (path: string) => (isWindows ? { PATH: path, Path: path } : { PATH: path });
 
-const scratch = () => realpathSync(mkdtempSync(join(tmpdir(), "skillfleet-mac-")));
+const scratch = () => realpathSync(mkdtempSync(join(tmpdir(), "fleetrc-mac-")));
 
 type Check = { name: string; ok: boolean; detail: string };
 
@@ -61,7 +61,7 @@ describe("mac environments", () => {
         // Without a link anywhere, the only choice is the versioned path.
         expect(stableNode({ execPath, env: { PATH: join(v1, "bin") }, home })).toBe(execPath);
 
-        const launcher = join(root, "skillfleet");
+        const launcher = join(root, "fleetrc");
         executable(launcher, launchers(link, cli).sh);
         // The upgrade: a new version, the link moved to it, the old folder deleted.
         const v2 = fakeNode(join(root, "opt", "node-v24.2.0"));
@@ -86,7 +86,7 @@ describe("mac environments", () => {
       const env = { PATH: pathWith(bin, m.env) };
       const install = await m.runWith({ env }, "self-install");
       expect(install.code, install.stderr).toBe(0);
-      const launcher = join(m.stateDir, "bin", "skillfleet");
+      const launcher = join(m.stateDir, "bin", "fleetrc");
       expect(readFileSync(launcher, "utf8")).toContain(`exec "${join(bin, "node")}" `);
       const healthy = JSON.parse((await m.runWith({ env }, "doctor", "--json")).stdout) as Check[];
       expect(healthy.find((check) => check.name === "node")).toMatchObject({ ok: true });
@@ -95,14 +95,14 @@ describe("mac environments", () => {
       const doctor = await m.runWith({ env }, "doctor", "--json");
       const node = (JSON.parse(doctor.stdout) as Check[]).find((check) => check.name === "node");
       expect(node?.ok).toBe(false);
-      expect(node?.detail).toContain("npx skillfleet@latest self-install");
-      expect(node?.detail).not.toContain("run `skillfleet timer install`");
+      expect(node?.detail).toContain("npx fleetrc@latest self-install");
+      expect(node?.detail).not.toContain("run `fleetrc timer install`");
     },
   );
 
   // MAC4: the PATH advice named ~/.profile, which zsh (the macOS default) never reads.
   it("MAC4. the PATH advice names the file the user's shell reads", () => {
-    const bin = "/h/.local/state/skillfleet/bin";
+    const bin = "/h/.local/state/fleetrc/bin";
     expect(pathAdvice(bin, "/bin/zsh", "darwin")).toContain(
       `in ~/.zprofile: export PATH='${bin}':"$PATH"`,
     );
@@ -110,12 +110,12 @@ describe("mac environments", () => {
     expect(pathAdvice(bin, "/bin/bash", "darwin")).toContain("in ~/.bash_profile:");
     expect(pathAdvice(bin, "/bin/bash", "linux")).toContain("in ~/.bashrc:");
     expect(pathAdvice(bin, "/opt/homebrew/bin/fish", "darwin")).toMatch(
-      /: fish_add_path '\/h\/.local\/state\/skillfleet\/bin'$/,
+      /: fish_add_path '\/h\/.local\/state\/fleetrc\/bin'$/,
     );
     expect(pathAdvice(bin, "", "linux")).toContain("in ~/.profile:");
     // R2-17: csh, tcsh and nushell neither read ~/.profile nor take `export`.
     expect(pathAdvice(bin, "/bin/tcsh", "linux")).toMatch(
-      /in ~\/\.tcshrc: set path = \( '\/h\/.local\/state\/skillfleet\/bin' \$path \)$/,
+      /in ~\/\.tcshrc: set path = \( '\/h\/.local\/state\/fleetrc\/bin' \$path \)$/,
     );
     expect(pathAdvice(bin, "/bin/csh", "darwin")).toContain("in ~/.cshrc: set path = (");
     expect(pathAdvice(bin, "/usr/bin/nu", "linux")).toContain(
@@ -154,8 +154,8 @@ describe("mac environments", () => {
         );
         executable(join(nodeBin, "node"), `#!/bin/sh\necho '{"finishedAt":"x","ok":true}'\n`);
         executable(
-          join(state, "skillfleet", "bin", "skillfleet"),
-          launchers(join(nodeBin, "node"), join(state, "skillfleet", "app", "cli.mjs")).sh,
+          join(state, "fleetrc", "bin", "fleetrc"),
+          launchers(join(nodeBin, "node"), join(state, "fleetrc", "app", "cli.mjs")).sh,
         );
         const run = spawnSync("/bin/sh", ["-c", remoteScript("upgrade", "1.2.3")], {
           env: { HOME: root, XDG_STATE_HOME: state, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
@@ -163,7 +163,7 @@ describe("mac environments", () => {
         });
         expect(run.stdout, run.stderr).toContain('"finishedAt"');
         expect(readFileSync(log, "utf8")).toBe(
-          `${join(nodeBin, "node")}\n-y skillfleet@1.2.3 self-install\n`,
+          `${join(nodeBin, "node")}\n-y --package fleetrc@1.2.3 -- fleetrc self-install\n`,
         );
 
         // The launcher's node is gone: fleet sync says so instead of "exec: not found".
@@ -172,7 +172,7 @@ describe("mac environments", () => {
           env: { HOME: root, XDG_STATE_HOME: state, PATH: "/usr/bin:/bin" },
           encoding: "utf8",
         });
-        expect(sync.stdout.trim()).toBe("skillfleet-fleet: node-gone");
+        expect(sync.stdout.trim()).toBe("fleetrc-fleet: node-gone");
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
@@ -217,13 +217,13 @@ describe("mac environments", () => {
   });
 
   // MAC9: a second HOME under the same macOS user got SCHEDULE_OS_NAME_TAKEN and the library's
-  // "fix: Pick another name", which a skillfleet user cannot do.
-  it("MAC9. a timer another skillfleet install owns names that install and how to remove it", () => {
+  // "fix: Pick another name", which a fleetrc user cannot do.
+  it("MAC9. a timer another fleetrc install owns names that install and how to remove it", () => {
     const root = scratch();
     try {
       const other = join(root, "other home");
-      const state = join(other, ".local", "state", "skillfleet");
-      const plist = join(other, "Library", "LaunchAgents", "skillfleet-sync.plist");
+      const state = join(other, ".local", "state", "fleetrc");
+      const plist = join(other, "Library", "LaunchAgents", "fleetrc-sync.plist");
       mkdirSync(join(plist, ".."), { recursive: true });
       writeFileSync(
         plist,
@@ -240,11 +240,11 @@ describe("mac environments", () => {
           "</dict></plist>",
         ].join("\n"),
       );
-      const text = foreignTimer("skillfleet-sync", plist);
-      expect(text).toContain(`another skillfleet install, whose state folder is ${state}`);
+      const text = foreignTimer("fleetrc-sync", plist);
+      expect(text).toContain(`another fleetrc install, whose state folder is ${state}`);
       if (!isWindows)
         expect(text).toContain(
-          `HOME='${other}' XDG_STATE_HOME='${join(other, ".local", "state")}' npx skillfleet@latest timer remove`,
+          `HOME='${other}' XDG_STATE_HOME='${join(other, ".local", "state")}' npx fleetrc@latest timer remove`,
         );
       expect(text).not.toMatch(/Pick another name|error\.data|ViteHub/);
     } finally {
@@ -258,8 +258,8 @@ describe("mac environments", () => {
       const m = machine({ scheduler: "empty" });
       const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
       expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-      const other = join(m.root, "other", ".local", "state", "skillfleet");
-      const unit = m.at(".config", "systemd", "user", "skillfleet-sync.service");
+      const other = join(m.root, "other", ".local", "state", "fleetrc");
+      const unit = m.at(".config", "systemd", "user", "fleetrc-sync.service");
       mkdirSync(join(unit, ".."), { recursive: true });
       writeFileSync(
         unit,
@@ -306,7 +306,7 @@ describe("mac environments", () => {
     expect(dry.stderr).toContain("timer.cron");
   });
 
-  it("D9. a scheduler failure reads in skillfleet's terms, without the library's options", async () => {
+  it("D9. a scheduler failure reads in fleetrc's terms, without the library's options", async () => {
     const m = machine({ scheduler: "refuse" });
     const manifest = m.manifest({ agents: ["claude-code"], sources: [] });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);

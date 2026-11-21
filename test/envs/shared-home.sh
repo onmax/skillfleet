@@ -19,15 +19,15 @@ cat > "$S/m.json" <<'EOF'
   "hooks": [{ "name": "slow", "run": "sleep 40", "on": ["up:**"] }] }
 EOF
 for c in a b; do
-  docker run -d --name "sf-u2-shared-$c" -u root -e HOME=/shared -v "$S:/shared" -v "$tgz:/pkg/skillfleet.tgz:ro" sf-u2-alpine22 sleep infinity >/dev/null
+  docker run -d --name "sf-u2-shared-$c" -u root -e HOME=/shared -v "$S:/shared" -v "$tgz:/pkg/fleetrc.tgz:ro" sf-u2-alpine22 sleep infinity >/dev/null
 done
-SF=/shared/.local/state/skillfleet/bin/skillfleet
-docker exec sf-u2-shared-a sh -c "cd /shared && npx -y --package /pkg/skillfleet.tgz -- skillfleet init /shared/m.json --no-hooks >/dev/null 2>&1; echo init \$?"
+SF=/shared/.local/state/fleetrc/bin/fleetrc
+docker exec sf-u2-shared-a sh -c "cd /shared && npx -y --package /pkg/fleetrc.tgz -- fleetrc init /shared/m.json --no-hooks >/dev/null 2>&1; echo init \$?"
 (cd "$S/work" && echo v2 >> s1/SKILL.md && g commit -qam v2 && g push -q ../up.git main)
 docker exec -d sf-u2-shared-a sh -c "$SF sync > /shared/a.out 2>&1"
 sleep 5
-echo "--- the lock A holds: $(cat "$S/.local/state/skillfleet/sync.lock")"
-echo "--- sync in B while A runs its hook (expect: another skillfleet sync is running):"
+echo "--- the lock A holds: $(cat "$S/.local/state/fleetrc/sync.lock")"
+echo "--- sync in B while A runs its hook (expect: another fleetrc sync is running):"
 docker exec sf-u2-shared-b sh -c "$SF sync; echo exit \$?"
 docker rm -f sf-u2-shared-a sf-u2-shared-b >/dev/null
 docker run --rm -u root -v "$S:/shared" sf-u2-alpine22 rm -rf /shared/.local /shared/.claude /shared/.agents /shared/.cache

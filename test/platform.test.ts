@@ -31,7 +31,7 @@ describe("links on each OS", () => {
       const link = m.at(".claude/skills/win");
       expect(lstatSync(link).isSymbolicLink()).toBe(true);
       expect(linkOf(link)).toBe(join(work, "skills/win"));
-      const manifestFile = JSON.parse(read(m.at(".claude/skills/.skillfleet-manifest.json"))) as {
+      const manifestFile = JSON.parse(read(m.at(".claude/skills/.fleetrc-manifest.json"))) as {
         links: Record<string, { kind: string }>;
       };
       expect(manifestFile.links.win!.kind).toBe("junction");
@@ -56,7 +56,7 @@ describe("links on each OS", () => {
         sources: [{ id: "vendor", git: vendor.url }],
       });
       expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-      const record = JSON.parse(read(m.at(".claude/skills/.skillfleet-manifest.json"))) as {
+      const record = JSON.parse(read(m.at(".claude/skills/.fleetrc-manifest.json"))) as {
         links: Record<string, { kind: string }>;
       };
       expect(record.links.unix!.kind).toBe("symlink");
@@ -76,7 +76,7 @@ describe("links on each OS", () => {
       expect(names(m.at(dir))).toEqual(["copied", "other"]);
       expect(isLink(m.at(dir, "copied"))).toBe(false);
     }
-    const record = JSON.parse(read(m.at(".claude/skills/.skillfleet-manifest.json"))) as {
+    const record = JSON.parse(read(m.at(".claude/skills/.fleetrc-manifest.json"))) as {
       links: Record<string, { kind: string }>;
     };
     expect(record.links.copied!.kind).toBe("copy");
@@ -141,7 +141,7 @@ describe("links on each OS", () => {
     for (const dir of AGENT_DIRS) expect(read(m.at(dir, "beta/SKILL.md")), dir).toBe(edited);
     const status = await m.run("status");
     expect(status.stdout).toContain(
-      "edited beta (vendor): SKILL.md; upstream changed too, see `skillfleet diff beta`",
+      "edited beta (vendor): SKILL.md; upstream changed too, see `fleetrc diff beta`",
     );
     const doctor = await m.json<{ name: string; ok: boolean; detail: string }[]>("doctor");
     expect(doctor.find((check) => check.name === "agents agree")).toMatchObject({ ok: true });

@@ -1,5 +1,5 @@
 // Monochrome agent logos for the README banner, 24 by 24, from @lobehub/icons-static-svg (MIT).
-// Each logo is its owner's trademark, shown to say which agents skillfleet links skills into.
+// Each logo is its owner's trademark, shown to say which agents fleetrc links skills into.
 export const agents: { name: string; svg: string }[] = [
   {
     name: "Claude Code",

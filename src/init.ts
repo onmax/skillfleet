@@ -47,7 +47,7 @@ export interface Imports {
 export interface InitPlan {
   manifestSpec: string;
   manifestFile: string;
-  /** False when the manifest lives in a remote repository skillfleet only reads. */
+  /** False when the manifest lives in a remote repository fleetrc only reads. */
   editable: boolean;
   /** Skill names any agent folder shows today, and after init. */
   before: string[];
@@ -181,7 +181,7 @@ export async function planInit(
     checkout?: ReturnType<typeof manifestCheckoutRoute>["checkout"];
   } = {},
 ): Promise<InitPlan> {
-  const scratch = mkdtempSync(join(tmpdir(), "skillfleet-init-"));
+  const scratch = mkdtempSync(join(tmpdir(), "fleetrc-init-"));
   try {
     // A dry run fetches a remote manifest into a scratch folder, so it leaves the state folder alone.
     const cache = dryRun ? { cacheRoot: join(scratch, "manifests") } : { checkout };
@@ -340,7 +340,7 @@ function readOwnLinks(dir: string): Record<string, unknown> {
 /** The plan as text. `errors: false` leaves out the sync's errors, for when the real sync prints them next. */
 export function formatPlan(plan: InitPlan, { errors = true } = {}): string {
   const lines = [
-    `skillfleet init: manifest ${plan.editable ? tildify(plan.manifestFile) : plan.manifestSpec}`,
+    `fleetrc init: manifest ${plan.editable ? tildify(plan.manifestFile) : plan.manifestSpec}`,
   ];
   for (const migration of plan.migrations) {
     switch (migration.kind) {
@@ -480,9 +480,7 @@ function checkMoves(migrations: readonly Migration[]) {
     taken.add(key);
   }
   if (problems.length > 0)
-    throw new UserError(
-      `init changed nothing: ${problems.join("; ")}; run \`skillfleet init\` again`,
-    );
+    throw new UserError(`init changed nothing: ${problems.join("; ")}; run \`fleetrc init\` again`);
 }
 
 /** Carries out a plan: back up, adopt, unfold folder links, write config and imports. Sync runs after. */

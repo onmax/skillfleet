@@ -27,9 +27,9 @@ it.each([
     behind: [["vendor at 700ccfb"], ["held: vendor"]],
   },
 ])("compares live and cached runs: $name", async ({ runs, behind }) => {
-  const root = mkdtempSync(join(tmpdir(), "skillfleet-cache-"));
+  const root = mkdtempSync(join(tmpdir(), "fleetrc-cache-"));
   vi.stubEnv("XDG_STATE_HOME", root);
-  vi.stubEnv("SKILLFLEET_SSH", "ssh");
+  vi.stubEnv("FLEETRC_SSH", "ssh");
   const hosts = runs.map((_, index) => `host-${index}`);
   const now = Date.now();
   vi.mocked(exec).mockImplementation(async (_command, args) => {
@@ -66,8 +66,8 @@ it.each([
 });
 
 it("recognizes a tagged peer alias after a DNS timeout", async () => {
-  vi.stubEnv("SKILLFLEET_TAILSCALE", "tailscale");
-  vi.stubEnv("SKILLFLEET_SSH", "ssh");
+  vi.stubEnv("FLEETRC_TAILSCALE", "tailscale");
+  vi.stubEnv("FLEETRC_SSH", "ssh");
   const name = "server.tail.test";
   const address = "100.64.0.5";
   const tag = "tag:servers";
@@ -93,10 +93,10 @@ it("recognizes a tagged peer alias after a DNS timeout", async () => {
 });
 
 it.each([false, true])("only refreshes on the same retry route (%s)", async (changed) => {
-  const root = mkdtempSync(join(tmpdir(), "skillfleet-cache-"));
+  const root = mkdtempSync(join(tmpdir(), "fleetrc-cache-"));
   vi.stubEnv("XDG_STATE_HOME", root);
-  vi.stubEnv("SKILLFLEET_TAILSCALE", "tailscale");
-  vi.stubEnv("SKILLFLEET_SSH", "ssh");
+  vi.stubEnv("FLEETRC_TAILSCALE", "tailscale");
+  vi.stubEnv("FLEETRC_SSH", "ssh");
   const address = "100.64.0.5";
   const tag = "tag:servers";
   const observed = "owner/manifest//manifest.json";
@@ -127,8 +127,8 @@ it.each([false, true])("only refreshes on the same retry route (%s)", async (cha
     if (init && !retry)
       return {
         ...result,
-        stderr: `skillfleet-fleet: has ${observed}\n`,
-        stdout: "skillfleet-fleet: other-manifest\n",
+        stderr: `fleetrc-fleet: has ${observed}\n`,
+        stdout: "fleetrc-fleet: other-manifest\n",
       };
     if (retry) retries++;
     return {
@@ -178,10 +178,10 @@ it.each([false, true])("only refreshes on the same retry route (%s)", async (cha
 it.each(["status", "sync", "upgrade"] as const)(
   "verifies tag-only SSH routes before dispatching %s or attributing a report",
   async (action) => {
-    const root = mkdtempSync(join(tmpdir(), "skillfleet-cache-"));
+    const root = mkdtempSync(join(tmpdir(), "fleetrc-cache-"));
     vi.stubEnv("XDG_STATE_HOME", root);
-    vi.stubEnv("SKILLFLEET_TAILSCALE", "tailscale");
-    vi.stubEnv("SKILLFLEET_SSH", "ssh");
+    vi.stubEnv("FLEETRC_TAILSCALE", "tailscale");
+    vi.stubEnv("FLEETRC_SSH", "ssh");
     const name = "server.tail.test";
     const address = "100.64.0.5";
     const tag = "tag:servers";
@@ -246,10 +246,10 @@ it("preserves distinct spellings of unverified SSH aliases", async () => {
 it.each([true, false])(
   "refreshes offline reports only for the same peer and endpoint (reassigned: %s)",
   async (reassigned) => {
-    const root = mkdtempSync(join(tmpdir(), "skillfleet-cache-"));
+    const root = mkdtempSync(join(tmpdir(), "fleetrc-cache-"));
     vi.stubEnv("XDG_STATE_HOME", root);
-    vi.stubEnv("SKILLFLEET_TAILSCALE", "tailscale");
-    vi.stubEnv("SKILLFLEET_SSH", "ssh");
+    vi.stubEnv("FLEETRC_TAILSCALE", "tailscale");
+    vi.stubEnv("FLEETRC_SSH", "ssh");
     const times = ["2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", "2026-01-01T00:02:00Z"];
     const address = "100.64.0.5";
     const name = "old.tail.test";
@@ -323,10 +323,10 @@ const scenarios = [
 it.each(scenarios)(
   "attributes tagged reports to the actual SSH endpoint (%s)",
   async (scenario) => {
-    const root = mkdtempSync(join(tmpdir(), "skillfleet-cache-"));
+    const root = mkdtempSync(join(tmpdir(), "fleetrc-cache-"));
     vi.stubEnv("XDG_STATE_HOME", root);
-    vi.stubEnv("SKILLFLEET_TAILSCALE", "tailscale");
-    vi.stubEnv("SKILLFLEET_SSH", "ssh");
+    vi.stubEnv("FLEETRC_TAILSCALE", "tailscale");
+    vi.stubEnv("FLEETRC_SSH", "ssh");
     const address = "100.64.0.5";
     const tag = "tag:servers";
     const alias = "server-alias";

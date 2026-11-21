@@ -6,6 +6,7 @@ import { paths } from "./paths.ts";
 import { notInstalled, program } from "./program.ts";
 import { tailscaleStatus } from "./tailscale.ts";
 import type { Report } from "./report.ts";
+import { LEGACY_FLEET, reportVersion } from "./legacy.ts";
 
 export type FleetAction = "status" | "sync" | "upgrade" | "init";
 
@@ -22,10 +23,10 @@ export interface HostResult {
   via?: string;
   /** The host answered over ssh. */
   reachable: boolean;
-  /** False when skillfleet could not try the host: ssh is not installed, or the name is not one ssh takes. */
+  /** False when fleetrc could not try the host: ssh is not installed, or the name is not one ssh takes. */
   checked: boolean;
   /** The host's last run, fresh or from the local cache when unreachable. */
-  lastRun?: Pick<Report, "finishedAt" | "ok" | "skillfleet" | "host"> & {
+  lastRun?: Pick<Report, "finishedAt" | "ok" | "fleetrc" | "host"> & {
     skills: number;
     held: string[];
     errors: string[];
@@ -40,24 +41,26 @@ export interface HostResult {
   behind: string[];
 }
 
-const STATE = '"${XDG_STATE_HOME:-$HOME/.local/state}/skillfleet"';
+const STATE = '"${XDG_STATE_HOME:-$HOME/.local/state}/fleetrc"';
+/** The state folder of fleetrc's old name, on a host not yet moved (migrate.ts). */
+const OLD_STATE = LEGACY_FLEET.state;
 
 /** What a host prints, instead of a report, when it cannot give one. */
-const NOTE = "skillfleet-fleet:";
+const NOTE = "fleetrc-fleet:";
 const HOST_NOTES = {
   "never-synced": undefined,
-  "not-installed": "skillfleet is not installed there; run `npx skillfleet init <manifest>` on it",
+  "not-installed": "fleetrc is not installed there; run `npx fleetrc init <manifest>` on it",
   "node-gone":
-    "skillfleet is installed there, but the node its launcher and timer run is gone, as after a Node.js upgrade; run `npx skillfleet@latest self-install` on it",
+    "fleetrc is installed there, but the node its launcher and timer run is gone, as after a Node.js upgrade; run `npx fleetrc@latest self-install` on it",
   "no-node":
-    "skillfleet is not installed there, and node is not on the PATH ssh commands get; install Node.js 22.12 or newer, then run `npx skillfleet init <manifest>` on it",
+    "fleetrc is not installed there, and node is not on the PATH ssh commands get; install Node.js 22.12 or newer, then run `npx fleetrc init <manifest>` on it",
   "no-npx":
-    "node is there, but npx is not on the PATH ssh commands get; install Node.js 22.12 or newer with npm, then run `skillfleet fleet init` again",
+    "node is there, but npx is not on the PATH ssh commands get; install Node.js 22.12 or newer with npm, then run `fleetrc fleet init` again",
   "init-no-node":
-    "node is not on the PATH ssh commands get; install Node.js 22.12 or newer, then run `skillfleet fleet init` again",
+    "node is not on the PATH ssh commands get; install Node.js 22.12 or newer, then run `fleetrc fleet init` again",
   /** `fleet init` says which manifest, from the host's `has` line. */
   "other-manifest": "it has another manifest; pass --force to set it up with this one",
-  "unreadable-config": "could not read the host's skillfleet config; check config.json there",
+  "unreadable-config": "could not read the host's fleetrc config; check config.json there",
   "local-manifest": "the requested manifest resolves to a local path on the host",
 } as const;
 
@@ -82,8 +85,8 @@ const NOW = `echo "${NOTE} now $("$l" --version </dev/null 2>/dev/null)" >&2`;
 const watched = (command: string) =>
   `{ exec 3<&0; ${command} </dev/null 3<&- & p=$!; { read -r _ && { while read -r _; do :; done; kill $p; }; } <&3 >/dev/null 2>&1 & w=$!; exec 3<&-; wait $p; s=$?; kill $w 2>/dev/null; exit $s; }`;
 
-/** Finds skillfleet on the host: the installed launcher, else a `skillfleet` on PATH. */
-const FIND = `f=${STATE}/bin/skillfleet; [ -x "$f" ] || f=$(command -v skillfleet) || f=`;
+/** Finds fleetrc on the host: the installed launcher, else a `fleetrc` on PATH. */
+const FIND = `f=${STATE}/bin/fleetrc; [ -x "$f" ] || f=${OLD_STATE}/${LEGACY_FLEET.launcher}; [ -x "$f" ] || f=$(command -v fleetrc) || f=`;
 /**
  * The node the installed launcher runs, in `n` when it is still there. ssh runs commands in a
  * non-interactive shell, without what ~/.zprofile or ~/.bashrc add to PATH (on macOS PATH is
@@ -91,7 +94,7 @@ const FIND = `f=${STATE}/bin/skillfleet; [ -x "$f" ] || f=$(command -v skillflee
  * `exec "<node>" "<cli>" "$@"`, with `\`, `"`, `$` and a backtick escaped by a backslash. A node
  * the launcher names that is gone, as after a Node.js upgrade, is in `g`.
  */
-const LAUNCHER_NODE = `l=${STATE}/bin/skillfleet; n=; g=; if [ -f "$l" ]; then n=$(sed -n 's/^exec "\\([^"]*\\)" .*/\\1/p' "$l" | sed 's/\\\\\\(.\\)/\\1/g'); if [ -n "$n" ] && [ ! -x "$n" ]; then g=$n; n=; fi; fi`;
+const LAUNCHER_NODE = `l=${STATE}/bin/fleetrc; [ -f "$l" ] || [ ! -f ${OLD_STATE}/${LEGACY_FLEET.launcher} ] || l=${OLD_STATE}/${LEGACY_FLEET.launcher}; n=; g=; if [ -f "$l" ]; then n=$(sed -n 's/^exec "\\([^"]*\\)" .*/\\1/p' "$l" | sed 's/\\\\\\(.\\)/\\1/g'); if [ -n "$n" ] && [ ! -x "$n" ]; then g=$n; n=; fi; fi`;
 /**
  * npx in `x`: the one next to the launcher's node, with that node first on PATH for npx's own
  * `#!/usr/bin/env node`, else the one on PATH.
@@ -101,7 +104,7 @@ const NPX = `x=; if [ -n "$n" ] && [ -x "\${n%/*}/npx" ]; then x="\${n%/*}/npx";
  * Read the host's config into `m` with the launcher's Node or the one on PATH. Only a missing
  * config or one without a manifest is treated as unconfigured.
  */
-const CONFIGURED = `case "\${XDG_CONFIG_HOME:-}" in /*) c="$XDG_CONFIG_HOME";; *) c="$HOME/.config";; esac; k=\${n:-node}; m=$("$k" -e '
+const CONFIGURED = `case "\${XDG_CONFIG_HOME:-}" in /*) c="$XDG_CONFIG_HOME";; *) c="$HOME/.config";; esac; cf="$c/fleetrc/config.json"; [ -f "$cf" ] || [ ! -f "$c/${LEGACY_FLEET.config}" ] || cf="$c/${LEGACY_FLEET.config}"; k=\${n:-node}; m=$("$k" -e '
   let text;
   try { text = require("node:fs").readFileSync(process.argv[1], "utf8"); }
   catch (error) { if (error.code === "ENOENT") process.exit(0); throw error; }
@@ -112,7 +115,7 @@ const CONFIGURED = `case "\${XDG_CONFIG_HOME:-}" in /*) c="$XDG_CONFIG_HOME";; *
     if (typeof spec !== "string" || !spec || /[\\r\\n\\0]/.test(spec)) process.exit(1);
     process.stdout.write(spec);
   }
-' "$c/skillfleet/config.json" </dev/null 2>/dev/null)`;
+' "$cf" </dev/null 2>/dev/null)`;
 
 const NOT_SHADOWED = `const {statSync}=require("node:fs");
 const {join,resolve}=require("node:path");
@@ -124,7 +127,7 @@ if(stat(local(spec)))process.exit(1);
 const scheme=spec.indexOf("://");
 const separator=spec.indexOf("//",scheme<0?0:scheme+3);
 if(separator>=0){const repo=local(spec.slice(0,separator));if(stat(repo)?.isDirectory() && stat(join(repo,"HEAD"))?.isFile() && stat(join(repo,"objects")) && stat(join(repo,"refs")))process.exit(1)}`;
-/** Prints why there is no skillfleet to run. */
+/** Prints why there is no fleetrc to run. */
 const MISSING = `if command -v node >/dev/null 2>&1; then echo "${NOTE} not-installed"; else echo "${NOTE} no-node"; fi`;
 
 /** What `fleet init` sets a host up with. */
@@ -142,12 +145,18 @@ export interface InitSetup {
 }
 
 /**
- * The npx arguments that run `skillfleet init` on a host: this version from npm, or the package
- * SKILLFLEET_PACKAGE names (a tarball, a URL or a pkg.pr.new preview).
+ * The npx arguments that run `fleetrc init` on a host: this version from npm, or the package
+ * FLEETRC_PACKAGE names (a tarball, a URL or a pkg.pr.new preview).
  */
 export function initArgs(version: string, { spec, flags }: InitSetup): string[] {
-  const pkg = process.env.SKILLFLEET_PACKAGE || `skillfleet@${version}`;
-  return ["-y", "--package", pkg, "--", "skillfleet", "init", spec, ...flags];
+  const pkg = process.env.FLEETRC_PACKAGE || `fleetrc@${version}`;
+  return ["-y", "--package", pkg, "--", "fleetrc", "init", spec, ...flags];
+}
+
+/** The npx arguments that run `fleetrc self-install` on a host, from the package `initArgs` names. */
+export function upgradeArgs(version: string): string[] {
+  const pkg = process.env.FLEETRC_PACKAGE || `fleetrc@${version}`;
+  return ["-y", "--package", pkg, "--", "fleetrc", "self-install"];
 }
 
 /** `npx <args>` as a person would type it, quoting only the words a shell would split. */
@@ -165,14 +174,15 @@ export function remoteScript(
 ): string {
   switch (action) {
     case "status":
-      return `${ANSWERED}; r=${STATE}/last-run.json; if [ -f "$r" ]; then cat "$r"; else ${FIND}; if [ -n "$f" ]; then echo "${NOTE} never-synced"; else ${MISSING}; fi; fi`;
+      return `${ANSWERED}; r=${STATE}/last-run.json; [ -f "$r" ] || [ ! -f ${OLD_STATE}/last-run.json ] || r=${OLD_STATE}/last-run.json; if [ -f "$r" ]; then cat "$r"; else ${FIND}; if [ -n "$f" ]; then echo "${NOTE} never-synced"; else ${MISSING}; fi; fi`;
     case "sync":
       return `${ANSWERED}; ${LAUNCHER_NODE}; ${FIND}; if [ -n "$g" ] && [ "$f" = "$l" ]; then echo "${NOTE} node-gone"; elif [ -n "$f" ]; then ${watched(`"$f" sync --json${dryRun ? " --dry-run" : ""}`)}; else ${MISSING}; fi`;
     case "upgrade":
-      return `${ANSWERED}; ${LAUNCHER_NODE}; ${WAS}; ${NPX}; if [ -n "$x" ]; then "$x" -y skillfleet@${version} self-install </dev/null && ${NOW} && ${watched('"$l" sync --json')}; elif [ -n "$g" ]; then echo "${NOTE} node-gone"; else echo "${NOTE} no-node"; fi`;
+      // self-install moves a host with the old name's install first, launcher included.
+      return `${ANSWERED}; ${LAUNCHER_NODE}; ${WAS}; ${NPX}; if [ -n "$x" ]; then "$x" ${upgradeArgs(version).map(quote).join(" ")} </dev/null && l=${STATE}/bin/fleetrc && ${NOW} && ${watched('"$l" sync --json')}; elif [ -n "$g" ]; then echo "${NOTE} node-gone"; else echo "${NOTE} no-node"; fi`;
     case "init": {
       if (!setup) throw new Error("remoteScript: init needs a setup");
-      // A relative SKILLFLEET_PACKAGE is a path from the login folder, which `cd /` leaves.
+      // A relative FLEETRC_PACKAGE is a path from the login folder, which `cd /` leaves.
       const word = (arg: string, i: number) =>
         i === 2 && (/^\.\.?\//.test(arg) || /^[^/:@]*\.(?:tgz|tar\.gz|tar)$/i.test(arg))
           ? `"$o"/${quote(arg)}`
@@ -232,19 +242,19 @@ export async function unpublished(
 ): Promise<string | undefined> {
   const fix =
     command === "upgrade"
-      ? "run the upgrade from a release, such as `npx skillfleet@latest fleet upgrade`"
-      : "run it from a release, such as `npx skillfleet@latest fleet init`, or name a package hosts can install in SKILLFLEET_PACKAGE";
+      ? "run the upgrade from a release, such as `npx fleetrc@latest fleet upgrade`"
+      : "run it from a release, such as `npx fleetrc@latest fleet init`, or name a package hosts can install in FLEETRC_PACKAGE";
   if (version === "0.0.0")
-    return `this skillfleet is a development or preview build (0.0.0), which hosts cannot install from npm; ${fix}`;
+    return `this fleetrc is a development or preview build (0.0.0), which hosts cannot install from npm; ${fix}`;
   const registry = (process.env.npm_config_registry || "https://registry.npmjs.org").replace(
     /\/+$/,
     "",
   );
   try {
-    const response = await fetch(`${registry}/skillfleet/${encodeURIComponent(version)}`, {
+    const response = await fetch(`${registry}/fleetrc/${encodeURIComponent(version)}`, {
       signal: AbortSignal.timeout(15_000),
     });
-    if (response.status === 404) return `skillfleet ${version} is not on ${registry}; ${fix}`;
+    if (response.status === 404) return `fleetrc ${version} is not on ${registry}; ${fix}`;
   } catch {}
   return undefined;
 }
@@ -291,7 +301,7 @@ function summarize(raw: unknown): HostResult["lastRun"] {
     host: typeof raw.host === "string" ? raw.host : "",
     finishedAt: raw.finishedAt,
     ok: raw.ok === true,
-    skillfleet: typeof raw.skillfleet === "string" ? raw.skillfleet : "",
+    fleetrc: reportVersion(raw, "fleetrc"),
     skills,
     held,
     errors,
@@ -357,7 +367,7 @@ async function runOnHost(
 ) {
   const problem = hostProblem(host);
   if (problem) return { error: problem, reached: false, checked: false };
-  const { command, prefix } = program("SKILLFLEET_SSH", "ssh");
+  const { command, prefix } = program("FLEETRC_SSH", "ssh");
   const args = [
     ...prefix,
     ...sshOptions(timeoutMs),
@@ -374,7 +384,7 @@ async function runOnHost(
   });
   if (run.spawnError === "ENOENT")
     return {
-      error: notInstalled(command, "ssh", "SKILLFLEET_SSH"),
+      error: notInstalled(command, "ssh", "FLEETRC_SSH"),
       reached: false,
       checked: false,
     };
@@ -429,7 +439,7 @@ async function runOnHost(
       now,
     };
   return {
-    error: "the host answered with something that is not a skillfleet report",
+    error: "the host answered with something that is not a fleetrc report",
     reached: true,
   };
 }
@@ -441,11 +451,11 @@ function initFailure(report: unknown, code: number | null, stderr: string): stri
     const said = stderr.trim().split("\n").slice(-2).join(" ");
     if (said) why.push(said);
   }
-  return `skillfleet init exited ${code ?? "on a signal"}${why.length > 0 ? ` (${why.join("; ")})` : ""}, so the host is not set up`;
+  return `fleetrc init exited ${code ?? "on a signal"}${why.length > 0 ? ` (${why.join("; ")})` : ""}, so the host is not set up`;
 }
 
 /**
- * The skillfleet report a host printed, or undefined when its output holds none. From `init`, the
+ * The fleetrc report a host printed, or undefined when its output holds none. From `init`, the
  * report of the sync it ran, or the error it stopped with.
  */
 function parseReport(
@@ -468,9 +478,9 @@ function parseReport(
     const timer = isRecord(raw.timer) ? raw.timer : undefined;
     const timerError =
       typeof timer?.error === "string"
-        ? `skillfleet init did not install the timer: ${timer.error}`
+        ? `fleetrc init did not install the timer: ${timer.error}`
         : requireTimer && !timer
-          ? "skillfleet init did not report installing the requested timer"
+          ? "fleetrc init did not report installing the requested timer"
           : undefined;
     return { report: raw.sync, timerError };
   }
@@ -611,9 +621,9 @@ export async function fleet(
           }
         }
       }
-      const before = lastRun?.skillfleet;
+      const before = lastRun?.fleetrc;
       // What the host runs once the upgrade went in, told before its sync, which may still fail.
-      const to = ("now" in answer ? answer.now : undefined) || run?.skillfleet;
+      const to = ("now" in answer ? answer.now : undefined) || run?.fleetrc;
       const upgrade =
         action === "upgrade" && to
           ? {
@@ -945,7 +955,7 @@ async function effectiveDestination(
   budget: number,
 ) {
   if (hostProblem(entry) || budget <= 0) return undefined;
-  const { command, prefix } = program("SKILLFLEET_SSH", "ssh");
+  const { command, prefix } = program("FLEETRC_SSH", "ssh");
   const run = await exec(
     command,
     [...prefix, "-G", ...sshOptions(timeoutMs), ...sshDestination(entry), remoteCommand],

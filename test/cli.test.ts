@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { cli, machine, remote, skills, version } from "./fixture.ts";
 
-describe("skillfleet", () => {
+describe("fleetrc", () => {
   it("is built", () => {
     expect(existsSync(cli), `${cli} is missing, run pnpm build`).toBe(true);
   });
@@ -37,10 +37,10 @@ describe("skillfleet", () => {
       expect(stdout).toContain(`  ${command}`);
   });
 
-  it("bare skillfleet syncs, and says how to start when there is no manifest", async () => {
+  it("bare fleetrc syncs, and says how to start when there is no manifest", async () => {
     const { code, stderr } = await machine().run();
     expect(code).toBe(1);
-    expect(stderr).toBe("skillfleet: no manifest yet: run `skillfleet init <manifest>` first\n");
+    expect(stderr).toBe("fleetrc: no manifest yet: run `fleetrc init <manifest>` first\n");
   });
 
   it("rejects an unknown command and an invalid manifest", async () => {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { machine, type Machine, names, remote, sha256, skills } from "./fixture.ts";
 
 /**
- * A fake `tailscale` for SKILLFLEET_TAILSCALE that prints `<dir>/status.json`, so a test can change
+ * A fake `tailscale` for FLEETRC_TAILSCALE that prints `<dir>/status.json`, so a test can change
  * the policy between runs, and touches `<dir>/tailscale-ran`.
  */
 function fakeTailscale(m: Machine) {
@@ -19,11 +19,11 @@ process.stdout.write(readFileSync(${JSON.stringify(join(dir, "status.json"))}, "
   );
   const status = join(dir, "status.json");
   return {
-    env: { SKILLFLEET_TAILSCALE: script },
+    env: { FLEETRC_TAILSCALE: script },
     ran: join(dir, "tailscale-ran"),
-    /** The policy hands this machine `values` under skillfleet's capability, or nothing. */
+    /** The policy hands this machine `values` under fleetrc's capability, or nothing. */
     policy(values?: unknown[]) {
-      const capMap = values ? { "github.com/onmax/skillfleet": values } : {};
+      const capMap = values ? { "github.com/onmax/fleetrc": values } : {};
       writeFileSync(
         status,
         JSON.stringify({ BackendState: "Running", Self: { PublicKey: "self", CapMap: capMap } }),
@@ -33,15 +33,12 @@ process.stdout.write(readFileSync(${JSON.stringify(join(dir, "status.json"))}, "
 }
 
 const config = (m: Machine) =>
-  JSON.parse(readFileSync(m.at(".config/skillfleet/config.json"), "utf8")) as Record<
-    string,
-    unknown
-  >;
+  JSON.parse(readFileSync(m.at(".config/fleetrc/config.json"), "utf8")) as Record<string, unknown>;
 
 function team(m: Machine, name: string, skill: string) {
   const vendor = remote(m, `${name}-skills`, skills("skills/", skill));
   return remote(m, name, {
-    ".skillfleet/manifest.json": JSON.stringify({
+    ".fleetrc/manifest.json": JSON.stringify({
       agents: ["claude-code"],
       sources: [{ id: name, git: vendor.https }],
     }),
@@ -57,7 +54,7 @@ describe("the manifest from the tailnet policy", () => {
     expect(run.code, run.stdout + run.stderr).toBe(0);
     expect(readFileSync(tailscale.ran, "utf8")).toBe("status --json --peers=false\n");
     expect(config(m)).toMatchObject({
-      manifest: "https://git.skillfleet.test/home.git//.skillfleet/manifest.json",
+      manifest: "https://git.fleetrc.test/home.git//.fleetrc/manifest.json",
       tailscale: true,
     });
     expect(names(m.at(".claude/skills"))).toEqual(["from-tailnet"]);
@@ -76,9 +73,7 @@ describe("the manifest from the tailnet policy", () => {
     const moved = await m.runWith({ env: tailscale.env }, "sync");
     expect(moved.code, moved.stdout + moved.stderr).toBe(0);
     expect(moved.stdout + moved.stderr).toContain("the tailnet policy now names the manifest");
-    expect(config(m).manifest).toBe(
-      "https://git.skillfleet.test/moved.git//.skillfleet/manifest.json",
-    );
+    expect(config(m).manifest).toBe("https://git.fleetrc.test/moved.git//.fleetrc/manifest.json");
     expect(names(m.at(".claude/skills"))).toEqual(["second"]);
 
     const offline = await m.runWith(
@@ -95,9 +90,7 @@ describe("the manifest from the tailnet policy", () => {
     const kept = await m.runWith({ env: tailscale.env }, "sync");
     expect(kept.code, kept.stdout + kept.stderr).toBe(0);
     expect(kept.stdout + kept.stderr).toContain("kept the manifest");
-    expect(config(m).manifest).toBe(
-      "https://git.skillfleet.test/moved.git//.skillfleet/manifest.json",
-    );
+    expect(config(m).manifest).toBe("https://git.fleetrc.test/moved.git//.fleetrc/manifest.json");
     expect(names(m.at(".claude/skills"))).toEqual(["second"]);
   });
 
@@ -114,14 +107,14 @@ describe("the manifest from the tailnet policy", () => {
     const switched = await m.runWith({ env: tailscale.env }, "sync");
     expect(switched.code, switched.stdout + switched.stderr).toBe(0);
     const before = config(m);
-    expect(before.manifest).toBe("github:example/replacement//.skillfleet/manifest.json");
+    expect(before.manifest).toBe("github:example/replacement//.fleetrc/manifest.json");
 
-    replacement.commit({ ".skillfleet/manifest.json": null, "README.md": "Manifest removed\n" });
-    const alias = `${url}//.skillfleet/manifest.json`;
+    replacement.commit({ ".fleetrc/manifest.json": null, "README.md": "Manifest removed\n" });
+    const alias = `${url}//.fleetrc/manifest.json`;
     tailscale.policy([{ manifest: alias }]);
     const rejected = await m.runWith({ env: tailscale.env }, "sync");
     expect(rejected.code, rejected.stdout + rejected.stderr).toBe(1);
-    expect(rejected.stderr).toContain("has no .skillfleet/manifest.json");
+    expect(rejected.stderr).toContain("has no .fleetrc/manifest.json");
     expect(config(m)).toEqual(before);
 
     const offline = await m.runWith({ env: tailscale.env }, "sync", "--offline");
@@ -129,7 +122,7 @@ describe("the manifest from the tailnet policy", () => {
     expect(names(m.at(".claude/skills"))).toEqual(["second"]);
 
     replacement.commit({
-      ".skillfleet/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
+      ".fleetrc/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
     });
     const accepted = await m.runWith({ env: tailscale.env }, "sync");
     expect(accepted.code, accepted.stdout + accepted.stderr).toBe(0);
@@ -157,7 +150,7 @@ describe("the manifest from the tailnet policy", () => {
     const clone = `${page}.git`;
     const homeUrl = "https://github.com/example/home.git";
     const home = remote(m, "home", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         extends: [`${page}//first.json`, `${clone}//second.json`],
         sources: [],
@@ -176,7 +169,7 @@ describe("the manifest from the tailnet policy", () => {
     const root = join(
       cache,
       "tailnet-manifests",
-      hash(JSON.stringify([homeUrl, ".skillfleet/manifest.json", undefined])).slice(0, 32),
+      hash(JSON.stringify([homeUrl, ".fleetrc/manifest.json", undefined])).slice(0, 32),
     );
     const pageKey = hash(`${page}#`);
     const cloneKey = hash(`${clone}#`);
@@ -201,7 +194,7 @@ describe("the manifest from the tailnet policy", () => {
     expect(beforeSwitch.code, beforeSwitch.stdout + beforeSwitch.stderr).toBe(0);
 
     upstream.commit({ "second.json": JSON.stringify({ sources: [] }) });
-    tailscale.policy([{ manifest: `${homeUrl}//.skillfleet/manifest.json` }]);
+    tailscale.policy([{ manifest: `${homeUrl}//.fleetrc/manifest.json` }]);
     const rejected = await m.runWith({ env: tailscale.env }, "sync", "vendor");
     expect(rejected.code, rejected.stdout + rejected.stderr).toBe(1);
     expect(rejected.stderr).toContain('no source "vendor"');
@@ -216,7 +209,7 @@ describe("the manifest from the tailnet policy", () => {
     const m = machine();
     const tailscale = fakeTailscale(m);
     const repository = remote(m, "bundled", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         sources: [{ id: "bundled", local: "../skills" }],
       }),
@@ -235,7 +228,7 @@ describe("the manifest from the tailnet policy", () => {
     writeFileSync(copy, edited);
     const cached = await m.runWith({ env: tailscale.env }, "sync", "--offline", "--manifest", url);
     expect(cached.code, cached.stdout + cached.stderr).toBe(0);
-    const alias = `${url}//.skillfleet/manifest.json`;
+    const alias = `${url}//.fleetrc/manifest.json`;
     tailscale.policy([{ manifest: alias }]);
     const switched = await m.runWith({ env: tailscale.env }, "sync");
     expect(switched.code, switched.stdout + switched.stderr).toBe(0);
@@ -253,7 +246,7 @@ describe("the manifest from the tailnet policy", () => {
     const upstream = remote(m, "upstream", { "team.json": JSON.stringify({ sources: [] }) });
     const vendor = remote(m, "vendor", skills("skills/", "from-team"));
     const repository = remote(m, "bundled", {
-      ".skillfleet/manifest.json": JSON.stringify({
+      ".fleetrc/manifest.json": JSON.stringify({
         agents: ["claude-code"],
         extends: [`${upstream.https}//team.json`],
         sources: [{ id: "bundled", local: "../skills" }],
@@ -272,7 +265,7 @@ describe("the manifest from the tailnet policy", () => {
     upstream.commit({
       "team.json": JSON.stringify({ sources: [{ id: "vendor", git: vendor.https }] }),
     });
-    const alias = `${url}//.skillfleet/manifest.json`;
+    const alias = `${url}//.fleetrc/manifest.json`;
     tailscale.policy([{ manifest: alias }]);
     const switched = await m.runWith({ env: tailscale.env }, "sync");
     expect(switched.code, switched.stdout + switched.stderr).toBe(0);
@@ -289,20 +282,20 @@ describe("the manifest from the tailnet policy", () => {
     const m = machine();
     const tailscale = fakeTailscale(m);
     const repository = remote(m, "saved", {
-      ".skillfleet/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
+      ".fleetrc/manifest.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
     });
     const url = "https://github.com/example/saved.git";
     m.git(m.root, "config", "--global", `url.${repository.served}.insteadOf`, url);
     tailscale.policy([{ manifest: "github:example/saved" }]);
     const init = await m.runWith({ env: tailscale.env }, "init", "--no-hooks");
     expect(init.code, init.stdout + init.stderr).toBe(0);
-    const alias = `${url}//.skillfleet/manifest.json`;
+    const alias = `${url}//.fleetrc/manifest.json`;
     tailscale.policy([{ manifest: alias }]);
     const switched = await m.runWith({ env: tailscale.env }, "sync");
     expect(switched.code, switched.stdout + switched.stderr).toBe(0);
 
     repository.commit({
-      ".skillfleet/manifest.json": null,
+      ".fleetrc/manifest.json": null,
       "alternate.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
     });
     const override = `${url}//alternate.json`;
@@ -327,7 +320,7 @@ describe("the manifest from the tailnet policy", () => {
     tailscale.policy([{ manifest: repository.https }]);
     expect((await m.runWith({ env: tailscale.env }, "init", "--no-hooks")).code).toBe(0);
     repository.commit({
-      ".skillfleet/manifest.json": null,
+      ".fleetrc/manifest.json": null,
       "alternate.json": JSON.stringify({ agents: ["codex"], sources: [] }),
     });
     const override = `${repository.https}//alternate.json`;
@@ -344,7 +337,7 @@ describe("the manifest from the tailnet policy", () => {
     tailscale.policy([{ manifest: repository.https }]);
     expect((await m.runWith({ env: tailscale.env }, "init", "--no-hooks")).code).toBe(0);
     repository.commit({
-      ".skillfleet/manifest.json": null,
+      ".fleetrc/manifest.json": null,
       "alternate.json": JSON.stringify({ agents: ["codex"], sources: [] }),
     });
     const override = `${repository.https}//alternate.json`;
@@ -385,9 +378,7 @@ describe("the manifest from the tailnet policy", () => {
     const dry = await m.runWith({ env: tailscale.env }, "sync", "--dry-run");
     expect(dry.code, dry.stdout + dry.stderr).toBe(0);
     expect(dry.stdout + dry.stderr).toContain("moved.git");
-    expect(config(m).manifest).toBe(
-      "https://git.skillfleet.test/home.git//.skillfleet/manifest.json",
-    );
+    expect(config(m).manifest).toBe("https://git.fleetrc.test/home.git//.fleetrc/manifest.json");
   });
 
   it("does not save a policy repository whose manifest cannot be loaded", async () => {
@@ -420,7 +411,7 @@ describe("the manifest from the tailnet policy", () => {
     const before = config(m);
 
     home.commit({
-      ".skillfleet/manifest.json": null,
+      ".fleetrc/manifest.json": null,
       "new.json": JSON.stringify({ agents: ["claude-code"], sources: [] }),
     });
     tailscale.policy([{ manifest: `${home.https}//missing.json` }]);
@@ -487,8 +478,8 @@ describe("the manifest from the tailnet policy", () => {
 
   it("owner/repo in the policy is GitHub's even beside a folder of that name", async () => {
     const m = machine();
-    mkdirSync(m.at("me/skills/.skillfleet"), { recursive: true });
-    writeFileSync(m.at("me/skills/.skillfleet/manifest.json"), JSON.stringify({ sources: [] }));
+    mkdirSync(m.at("me/skills/.fleetrc"), { recursive: true });
+    writeFileSync(m.at("me/skills/.fleetrc/manifest.json"), JSON.stringify({ sources: [] }));
     const tailscale = fakeTailscale(m);
     tailscale.policy([{ manifest: "me/skills" }]);
     const run = await m.runWith(
@@ -524,7 +515,7 @@ describe("the manifest from the tailnet policy", () => {
   it("bare init without Tailscale or without a policy entry says what init needs", async () => {
     const m = machine();
     const missing = await m.runWith(
-      { env: { SKILLFLEET_TAILSCALE: join(m.root, "no-tailscale") } },
+      { env: { FLEETRC_TAILSCALE: join(m.root, "no-tailscale") } },
       "init",
       "--no-hooks",
     );
@@ -537,7 +528,7 @@ describe("the manifest from the tailnet policy", () => {
     const none = await m.runWith({ env: tailscale.env }, "init", "tailscale:", "--no-hooks");
     expect(none.code).toBe(1);
     expect(none.stderr).toContain('"nodeAttrs"');
-    expect(existsSync(m.at(".config/skillfleet/config.json"))).toBe(false);
+    expect(existsSync(m.at(".config/fleetrc/config.json"))).toBe(false);
   });
 
   it("a policy that names a folder on this machine, or an option, is refused", async () => {
@@ -555,6 +546,6 @@ describe("the manifest from the tailnet policy", () => {
       expect(run.code, manifest).toBe(1);
       expect(run.stderr).toContain("not in a repository");
     }
-    expect(existsSync(m.at(".config/skillfleet/config.json"))).toBe(false);
+    expect(existsSync(m.at(".config/fleetrc/config.json"))).toBe(false);
   });
 });

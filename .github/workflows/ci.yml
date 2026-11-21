@@ -111,7 +111,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Pack
-        run: pnpm pack --out "$RUNNER_TEMP/skillfleet.tgz"
+        run: pnpm pack --out "$RUNNER_TEMP/fleetrc.tgz"
       # The runner user has no login session, so it has no systemd user manager. Linger starts one,
       # as on a server.
       - name: Start the systemd user manager
@@ -132,8 +132,8 @@ jobs:
             echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime_dir/bus"
           } >> "$GITHUB_ENV"
           XDG_RUNTIME_DIR="$runtime_dir" systemctl --user is-system-running --wait || true
-      - name: Install skillfleet, let the OS timer sync twice, remove it
-        run: node .github/scripts/timer-e2e.mjs "$RUNNER_TEMP/skillfleet.tgz"
+      - name: Install fleetrc, let the OS timer sync twice, remove it
+        run: node .github/scripts/timer-e2e.mjs "$RUNNER_TEMP/fleetrc.tgz"
 
   # The session hooks as the agents run them: init writes them into a throwaway HOME's Claude Code
   # and Codex files, each runs through a shell from a parent that exits at once, and the sync it
@@ -162,9 +162,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Pack
-        run: pnpm pack --out "$RUNNER_TEMP/skillfleet.tgz"
+        run: pnpm pack --out "$RUNNER_TEMP/fleetrc.tgz"
       - name: Run the session hooks as Claude Code and Codex do, and wait for their syncs
-        run: node .github/scripts/hook-e2e.mjs "$RUNNER_TEMP/skillfleet.tgz"
+        run: node .github/scripts/hook-e2e.mjs "$RUNNER_TEMP/fleetrc.tgz"
 
   # Windows breaks that change the machine or need the real Task Scheduler: a subst drive for HOME
   # (test/windows.test.ts, W-SUBST), and the timer e2e under a USERPROFILE with
@@ -194,14 +194,14 @@ jobs:
       - run: pnpm build
       - name: Windows break tests, with subst
         env:
-          SKILLFLEET_BREAK_SUBST: "1"
+          FLEETRC_BREAK_SUBST: "1"
         run: pnpm exec vp test run test/windows.test.ts
       - name: Pack
         if: ${{ !cancelled() }}
-        run: pnpm pack --out "$RUNNER_TEMP/skillfleet.tgz"
+        run: pnpm pack --out "$RUNNER_TEMP/fleetrc.tgz"
       - name: Task Scheduler e2e under a USERPROFILE with metacharacters
         if: ${{ !cancelled() }}
-        run: node .github/scripts/timer-e2e.mjs "$RUNNER_TEMP/skillfleet.tgz" --home-name "O'Brien & Zoë ^ ! (x) \$(whoami) 😀"
+        run: node .github/scripts/timer-e2e.mjs "$RUNNER_TEMP/fleetrc.tgz" --home-name "O'Brien & Zoë ^ ! (x) \$(whoami) 😀"
       - name: Task Scheduler e2e under a USERPROFILE with %PATH% in it
         if: ${{ !cancelled() }}
-        run: node .github/scripts/timer-e2e.mjs "$RUNNER_TEMP/skillfleet.tgz" --home-name "pct %PATH% home"
+        run: node .github/scripts/timer-e2e.mjs "$RUNNER_TEMP/fleetrc.tgz" --home-name "pct %PATH% home"

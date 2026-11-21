@@ -1,4 +1,4 @@
-// What an agent's session hook runs: `skillfleet hook run <agent>`, when a session starts. It starts
+// What an agent's session hook runs: `fleetrc hook run <agent>`, when a session starts. It starts
 // a sync in the background when the last attempt is stale. The agent waits for it before the
 // session opens, so it loads only small modules (entry.ts imports it without cli.ts, and the
 // modules that start a sync load only when one starts), makes no network call, prints nothing,
@@ -16,19 +16,20 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { isRecord, lstat, readJsonOrNothing } from "./fs.ts";
+import { migrationNeeded } from "./legacy.ts";
 import { adoptInstalledPlaces, claudeHome, paths, stateDir } from "./paths.ts";
 
 export const HOOK_AGENTS = ["claude-code", "codex"] as const;
 export type HookAgent = (typeof HOOK_AGENTS)[number];
 
-/** How long after one attempt the hook leaves syncing alone; SKILLFLEET_HOOK_STALE_MS sets it, for tests. */
+/** How long after one attempt the hook leaves syncing alone; FLEETRC_HOOK_STALE_MS sets it, for tests. */
 function staleAfterMs(): number {
-  const set = Number(process.env.SKILLFLEET_HOOK_STALE_MS);
-  return process.env.SKILLFLEET_HOOK_STALE_MS && set >= 0 ? set : 15 * 60_000;
+  const set = Number(process.env.FLEETRC_HOOK_STALE_MS);
+  return process.env.FLEETRC_HOOK_STALE_MS && set >= 0 ? set : 15 * 60_000;
 }
 
 /** The timer's log, which syncs started by a hook append to as well. */
-const syncLog = () => join(paths.logs(), "skillfleet-sync.log");
+const syncLog = () => join(paths.logs(), "fleetrc-sync.log");
 
 /**
  * Whether the last attempt is recent. The stamp holds the time of the attempt, not of a finished
@@ -82,12 +83,12 @@ function syncEnv({
   delete env.SSH_AUTH_SOCK;
   if (process.env.SSH_AUTH_SOCK) env.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
   // A sync that meets another one exits 0 quietly, and its log lines carry the time.
-  env.SKILLFLEET_TIMER = "1";
+  env.FLEETRC_TIMER = "1";
   return env;
 }
 
 /**
- * Starts `skillfleet sync` on its own: it outlives the hook and the agent's wait for it, and writes
+ * Starts `fleetrc sync` on its own: it outlives the hook and the agent's wait for it, and writes
  * to the timer's log. It runs the installed copy with this node, as the launcher does; the hook was
  * started through the launcher, so this node is the launcher's.
  */
@@ -137,7 +138,7 @@ async function syncIfStale(why: string) {
   if (!release) return;
   try {
     // For tests: hold the claim a while, so hooks that started together meet it.
-    const hold = Number(process.env.SKILLFLEET_HOOK_CLAIM_HOLD_MS);
+    const hold = Number(process.env.FLEETRC_HOOK_CLAIM_HOLD_MS);
     if (hold > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, hold);
     // Another hook may have attempted between the first look and the claim.
     if (attemptedRecently()) return;
@@ -151,7 +152,7 @@ async function syncIfStale(why: string) {
   }
 }
 
-/** Whether this machine has a config.json that names a manifest: `skillfleet init` ran. */
+/** Whether this machine has a config.json that names a manifest: `fleetrc init` ran. */
 function configured(): boolean {
   if (!existsSync(paths.config())) return false;
   const config = readJsonOrNothing(paths.config());
@@ -159,13 +160,21 @@ function configured(): boolean {
 }
 
 /**
- * `skillfleet hook run <agent>` reads `hook_event_name` from stdin. For Claude Code's legacy prompt
+ * `fleetrc hook run <agent>` reads `hook_event_name` from stdin. For Claude Code's legacy prompt
  * hooks it only names new skills. Only SessionStart or a call without
- * an event can start a sync. On a machine without skillfleet's config it does nothing.
+ * an event can start a sync. On a machine without fleetrc's config it does nothing.
  */
 export async function runHook(agent: HookAgent, promptOnly = false) {
   try {
     adoptInstalledPlaces();
+    if (migrationNeeded(stateDir())) {
+      // The old name's install, moved once and quietly; the sync after it starts now.
+      try {
+        const { migrate } = await import("./migrate.ts");
+        await migrate();
+        rmSync(paths.hookAttempt(), { force: true });
+      } catch {}
+    }
     if (!configured()) return;
     let input = "";
     try {
@@ -227,7 +236,7 @@ export async function runHook(agent: HookAgent, promptOnly = false) {
       await syncIfStale(`${agent} ${name ?? "a session hook"}`);
     } catch {}
   } catch {
-    // The agent shows a hook's failure to the user, and the hook is the agent's, not skillfleet's.
+    // The agent shows a hook's failure to the user, and the hook is the agent's, not fleetrc's.
   } finally {
     process.exitCode = 0;
   }

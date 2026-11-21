@@ -351,11 +351,7 @@ describe("an index server that stalls on one skill", () => {
 
         serve("v2");
         site.stall.add(stalls);
-        const run = await m.runWith(
-          { env: { SKILLFLEET_FETCH_WAIT_MS: "1000" } },
-          "sync",
-          "--json",
-        );
+        const run = await m.runWith({ env: { FLEETRC_FETCH_WAIT_MS: "1000" } }, "sync", "--json");
         const report = JSON.parse(run.stdout) as {
           errors: string[];
           skills: { removed: string[] };

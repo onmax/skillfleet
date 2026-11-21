@@ -28,7 +28,7 @@ export function gunzipCapped(gz: Uint8Array): Buffer {
     return gunzipSync(gz, { maxOutputLength: UNPACKED_LIMIT });
   } catch (error) {
     if (error instanceof RangeError)
-      throw new Error("the archive unpacks to more than 100 MB, over skillfleet's size limit");
+      throw new Error("the archive unpacks to more than 100 MB, over fleetrc's size limit");
     throw error;
   }
 }
@@ -37,7 +37,7 @@ export function gunzipCapped(gz: Uint8Array): Buffer {
 const FILE_TYPES = new Set(["File", "OldFile", "ContiguousFile"]);
 
 const tooMany = () =>
-  new Error(`the archive has more than ${ENTRY_LIMIT} entries, over skillfleet's limit`);
+  new Error(`the archive has more than ${ENTRY_LIMIT} entries, over fleetrc's limit`);
 
 /** Parser events omit empty metadata, so count at the header boundary instead. */
 const CONSUME_HEADER = Object.getOwnPropertySymbols(Parser.prototype).find(
@@ -166,7 +166,7 @@ export function* zipEntries(
     offset = safe(buffer.readBigUInt64LE(record + 48), "zip64 central directory offset");
   }
   if (entries > ENTRY_LIMIT)
-    throw new Error(`the archive has more than ${ENTRY_LIMIT} entries, over skillfleet's limit`);
+    throw new Error(`the archive has more than ${ENTRY_LIMIT} entries, over fleetrc's limit`);
   for (let i = 0; i < entries; i++) {
     within(offset, 46, "central directory entry");
     if (buffer.readUInt32LE(offset) !== 0x02014b50) throw invalid("central directory entry");

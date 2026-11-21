@@ -57,7 +57,7 @@ describe("sync", () => {
     expect(read(m.at(".agents/skills/epsilon/notes.md"))).toBe("notes\n");
     for (const dir of UNIVERSAL_DIRS) expect(names(m.at(dir)), dir).toEqual([]);
     expect(read(m.at(".agents/skills/gamma/SKILL.md"))).toBe(skillMd("gamma"));
-    // Codex reads ~/.agents/skills; skillfleet never writes its deprecated folder.
+    // Codex reads ~/.agents/skills; fleetrc never writes its deprecated folder.
     expect(existsSync(m.at(".codex/skills"))).toBe(false);
 
     const again = await m.json("sync");
@@ -181,7 +181,7 @@ describe("sync", () => {
     ]);
   });
 
-  it("8. prunes only the links skillfleet made; hand-made folders and foreign links stay", async () => {
+  it("8. prunes only the links fleetrc made; hand-made folders and foreign links stay", async () => {
     const m = machine();
     const vendor = remote(m, "vendor", skills("skills/", "keep", "drop"));
     const manifest = m.manifest({
@@ -189,7 +189,7 @@ describe("sync", () => {
       sources: [{ id: "vendor", git: vendor.url }],
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
-    // A folder made by hand, and links skillfleet did not make, one of them under a name the manifest provides.
+    // A folder made by hand, and links fleetrc did not make, one of them under a name the manifest provides.
     mkdirSync(m.at(".claude/skills/handmade"));
     writeFileSync(m.at(".claude/skills/handmade/SKILL.md"), skillMd("handmade"));
     const elsewhere = join(m.root, "elsewhere");
@@ -226,8 +226,8 @@ describe("sync", () => {
     const m = machine();
     const team = remote(m, "team", skills("skills/", "team-skill"));
     const marker = join(m.root, "hook-ran");
-    const teamManifest = join(m.root, "team", ".skillfleet", "manifest.json");
-    mkdirSync(join(m.root, "team", ".skillfleet"), { recursive: true });
+    const teamManifest = join(m.root, "team", ".fleetrc", "manifest.json");
+    mkdirSync(join(m.root, "team", ".fleetrc"), { recursive: true });
     writeFileSync(
       teamManifest,
       JSON.stringify({
@@ -317,7 +317,7 @@ describe("sync", () => {
       script,
       `import { appendFileSync, readFileSync } from "node:fs";
 const report = JSON.parse(readFileSync(0, "utf8"));
-appendFileSync(${JSON.stringify(log)}, JSON.stringify({ changed: process.env.SKILLFLEET_CHANGED, skills: report.skills.total }) + "\\n");
+appendFileSync(${JSON.stringify(log)}, JSON.stringify({ changed: process.env.FLEETRC_CHANGED, skills: report.skills.total }) + "\\n");
 console.log("pstack rebuilt");`,
     );
     const manifest = m.manifest({
@@ -382,7 +382,7 @@ console.log("pstack rebuilt");`,
       writeFileSync(
         script,
         `import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(log)}, process.env.SKILLFLEET_HOOK + "\\n");`,
+appendFileSync(${JSON.stringify(log)}, process.env.FLEETRC_HOOK + "\\n");`,
       );
       const run = `"${process.execPath}" "${script}"`;
       m.manifest({
@@ -429,7 +429,7 @@ appendFileSync(${JSON.stringify(log)}, process.env.SKILLFLEET_HOOK + "\\n");`,
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
     expect(names(m.at(".claude/skills"))).toEqual(["one"]);
     expect(names(m.at(".agents/skills"))).toEqual(["one"]);
-    expect(readdirSync(m.at(".claude/skills"))).toContain(".skillfleet-manifest.json");
+    expect(readdirSync(m.at(".claude/skills"))).toContain(".fleetrc-manifest.json");
   });
 
   it("a sync that finds nothing new upstream copies no file", async () => {
@@ -441,10 +441,10 @@ appendFileSync(${JSON.stringify(log)}, process.env.SKILLFLEET_HOOK + "\\n");`,
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
     const log = join(m.root, "copies.log");
-    // The number of files the sync copied, which it writes to SKILLFLEET_DEBUG_COPIES at exit.
+    // The number of files the sync copied, which it writes to FLEETRC_DEBUG_COPIES at exit.
     const copies = async () => {
       rmSync(log, { force: true });
-      const run = await m.runWith({ env: { SKILLFLEET_DEBUG_COPIES: log } }, "sync");
+      const run = await m.runWith({ env: { FLEETRC_DEBUG_COPIES: log } }, "sync");
       expect(run.code, run.stdout + run.stderr).toBe(0);
       return Number(read(log).trim());
     };

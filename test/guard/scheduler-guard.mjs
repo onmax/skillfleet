@@ -3,7 +3,7 @@
 // scheduler command (systemctl, loginctl, launchctl, schtasks, or PowerShell running a
 // ScheduledTask cmdlet) runs fake-scheduler.mjs instead, whatever PATH holds and even by absolute
 // path. The one exception is a fake that a test put inside its own machine folder
-// ($SKILLFLEET_TEST_ROOT) and on PATH, as the linger tests do with loginctl.
+// ($FLEETRC_TEST_ROOT) and on PATH, as the linger tests do with loginctl.
 import childProcess from "node:child_process";
 import { existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 
 const fake = fileURLToPath(new URL("./fake-scheduler.mjs", import.meta.url));
 const SCHEDULER = new Set(["systemctl", "loginctl", "launchctl", "schtasks", "journalctl"]);
-const GUARDED = Symbol.for("skillfleet.test.scheduler-guard");
+const GUARDED = Symbol.for("fleetrc.test.scheduler-guard");
 
 /** The script of a PowerShell call, decoded from -EncodedCommand. */
 const powershellScript = (args) =>
@@ -42,7 +42,7 @@ const inside = (root, path) => {
 
 /** A fake the test made in its own folder, found where the spawn would find it (POSIX only). */
 function testsOwn(file, env) {
-  const root = env.SKILLFLEET_TEST_ROOT;
+  const root = env.FLEETRC_TEST_ROOT;
   if (!root || process.platform === "win32") return false;
   const name = String(file);
   if (name.includes("/")) return inside(root, name);
