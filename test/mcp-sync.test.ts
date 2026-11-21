@@ -299,18 +299,23 @@ describe("MCP servers", () => {
     const second = join(m.root, "second");
     writeFiles(first, { ...skills("skills/", "a"), "mcp.json": mcpFile({ docs: docs("1") }) });
     writeFiles(second, { ...skills("skills/", "b"), "mcp.json": mcpFile({ docs: docs("2") }) });
-    const manifest = m.manifest({
-      agents: ["claude-code"],
-      sources: [
-        { id: "first", local: first, skills: "skills/*", mcp: "mcp.json" },
-        { id: "second", local: second, skills: "skills/*", mcp: "mcp.json" },
-      ],
-    });
+    const sources = [
+      { id: "first", local: first, skills: "skills/*", mcp: "mcp.json" },
+      { id: "second", local: second, skills: "skills/*", mcp: "mcp.json" },
+    ];
+    const manifest = m.manifest({ agents: ["claude-code"], sources });
     const init = (await m.json<{ sync: Report }>("init", manifest, "--no-hooks")).sync;
     expect(init.shadowed).toContainEqual({ skill: "mcp/docs", winner: "first", loser: "second" });
     expect(JSON.stringify(json(read(m.at(".claude", ".claude.json"))).mcpServers)).toContain(
       "docs-mcp@1",
     );
+    writeFileSync(join(first, "mcp.json"), "{ not json");
+    const frozen = await sync(m);
+    expect(frozen.entries.updated).toEqual([]);
+    expect(read(m.at(".claude", ".claude.json"))).toContain("docs-mcp@1");
+    m.manifest({ agents: ["claude-code"], sources: sources.slice(1) });
+    expect((await sync(m)).entries.updated).toEqual(["mcp/claude-code/docs"]);
+    expect(read(m.at(".claude", ".claude.json"))).toContain("docs-mcp@2");
   });
 
   it("keeps a source's servers as they are while its mcp file does not parse", async () => {
@@ -403,6 +408,31 @@ describe("MCP servers", () => {
     expect(jsonc(read(file)).theme).toBe("dark");
   });
 
+  it.each([false, true])(
+    "reconciles the previous OpenCode file on a path change (edited: %s)",
+    async (edited) => {
+      const { m, write } = await setup(["opencode"], { docs: docs() });
+      const oldFile = m.at(".config", "opencode", "opencode.json");
+      const nextFile = m.at(".config", "opencode", "opencode.jsonc");
+      const original = read(oldFile);
+      if (edited) writeFileSync(oldFile, original.replace("docs-mcp@1", "docs-mcp@mine"));
+      writeFileSync(nextFile, "{\n  // my config\n}\n");
+      const moved = await sync(m);
+      if (edited) {
+        expect(moved.entries.held).toEqual([{ id: "mcp/opencode/docs", file: oldFile }]);
+        expect(read(nextFile)).not.toContain("docs-mcp");
+        expect(read(oldFile)).toContain("docs-mcp@mine");
+        writeFileSync(oldFile, original);
+        await sync(m);
+      }
+      expect(read(oldFile)).not.toContain("docs-mcp");
+      expect(read(nextFile)).toContain("docs-mcp@1");
+      write({});
+      expect((await sync(m)).entries.removed).toEqual(["mcp/opencode/docs"]);
+      expect(read(nextFile)).not.toContain("docs-mcp");
+    },
+  );
+
   it("an extended manifest's mcp is ignored, with a warning", async () => {
     const m = machine();
     const vendor = remote(m, "vendor", {
@@ -444,6 +474,11 @@ describe("MCP servers", () => {
     expect(read(file)).toContain("docs-mcp@1");
     expect((await m.run("update", "vendor")).code).toBe(0);
     expect(read(file)).toContain("docs-mcp@2");
+    vendor.commit({ "mcp.json": null });
+    expect((await sync(m)).entries.removed).toEqual([]);
+    expect(read(file)).toContain("docs-mcp@2");
+    expect((await m.run("update", "vendor")).code).toBe(0);
+    expect(read(file)).not.toContain("docs-mcp");
   });
 
   it("a dry run of a new vendored mcp file reports what the sync would write", async () => {

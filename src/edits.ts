@@ -27,6 +27,7 @@ import { itemName, itemPath, parseItemId } from "./files.ts";
 import { fetchClone, gitUrl, repoKey } from "./gitcache.ts";
 import { globBase } from "./glob.ts";
 import {
+  checkedOutPath,
   defaultSourceId,
   editManifest,
   type InPlaceSource,
@@ -70,14 +71,16 @@ export function manifestToEdit(
 ): ManifestTarget {
   const remote = remoteManifest(spec);
   if (!remote) return { file: loaded.root.file, push: false };
+  // The file the manifest was read from, which may be the old name's default (legacy.ts).
+  const path = checkedOutPath(remote.path, loaded.root.file);
   const key = repoKey(remote.repo);
   for (const source of loaded.root.sources)
     if (source.kind === "clone" && repoKey(source.git) === key) {
-      const file = join(source.path, remote.path);
+      const file = join(source.path, path);
       if (existsSync(file)) return { file, push: true };
     }
   throw new UserError(
-    `the manifest is a copy of the repository ${gitUrl(remote.repo)}, which the next sync fetches again, so fleetrc does not change it. ${change} in ${remote.path} there and push it, or clone it as a source with a "path" to let fleetrc edit the clone.`,
+    `the manifest is a copy of the repository ${gitUrl(remote.repo)}, which the next sync fetches again, so fleetrc does not change it. ${change} in ${path} there and push it, or clone it as a source with a "path" to let fleetrc edit the clone.`,
   );
 }
 
@@ -94,24 +97,33 @@ interface Located {
 }
 
 /**
- * An instruction file, subagent or command by its id, `<kind>/<path>`: from the first source in
- * the manifest that keeps it, as that is the one sync links.
+ * An instruction file, subagent or command by its id, `<kind>/<path>`: prefer an active link,
+ * then a pending update, then a retained installed copy.
  */
 function locateItem(loaded: LoadedManifest, state: State, typed: string): Located | undefined {
   const parsed = parseItemId(typed);
   if (!parsed) return undefined;
   const key = itemName(parsed.path);
-  for (const source of loaded.sources) {
-    const files = state.sources[source.id]?.files?.[parsed.kind];
-    if (files && (Object.hasOwn(files.items, key) || Object.hasOwn(files.pending, key)))
-      return { loaded, state, name: typed, source, item: { kind: parsed.kind, key } };
-  }
-  // A folder linked in place keeps no records, only the link.
-  const link = Object.values(state.links ?? {}).find((record) => record.item === typed);
-  const source = loaded.sources.find((candidate) => candidate.id === link?.source);
-  return source
-    ? { loaded, state, name: typed, source, item: { kind: parsed.kind, key } }
-    : undefined;
+  const linked = new Set(
+    Object.values(state.links ?? {})
+      .filter((record) => record.item === typed)
+      .map((record) => record.source),
+  );
+  const active = loaded.sources.filter((source) => linked.has(source.id));
+  const withRecord = (record: "pending" | "items") =>
+    loaded.sources.filter((source) =>
+      Object.hasOwn(state.sources[source.id]?.files?.[parsed.kind]?.[record] ?? {}, key),
+    );
+  const pending = active.length > 0 ? active : withRecord("pending");
+  const candidates = pending.length > 0 ? pending : withRecord("items");
+  if (candidates.length > 1)
+    throw new UserError(
+      `${typed} is ambiguous: it comes from ${candidates.map((source) => source.id).join(", ")}`,
+    );
+  const [source] = candidates;
+  if (!source)
+    throw new UserError(`no file "${typed}" is linked, pending or retained; run \`fleetrc list\``);
+  return { loaded, state, name: typed, source, item: { kind: parsed.kind, key } };
 }
 
 /** Where a vendored skill or file is kept: its folders in the store and its records. */

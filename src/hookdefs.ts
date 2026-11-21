@@ -182,6 +182,16 @@ const REQUIRED: Record<string, string[]> = {
   agent: ["prompt"],
 };
 
+function codexInputValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.every(codexInputValue);
+  if (isRecord(value)) return Object.values(value).every(codexInputValue);
+  return (
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value) && value < 2 ** 63)
+  );
+}
+
 function checkHandler(format: Format, handler: unknown, at: string): HookHandlerDef {
   if (!isRecord(handler)) throw new Error(`${at} must be an object`);
   const type = typeof handler.type === "string" ? handler.type : "";
@@ -205,6 +215,25 @@ function checkHandler(format: Format, handler: unknown, at: string): HookHandler
       (timeout === 0 && !format.zeroTimeout))
   )
     throw new Error(`${at} has "timeout" ${JSON.stringify(timeout)}; give a number of seconds`);
+  if (format === FORMATS.codex) {
+    if (typeof timeout === "number" && !Number.isSafeInteger(timeout))
+      throw new Error(`${at} needs "timeout" to be a whole number of seconds`);
+    for (const field of ["commandWindows", "command_windows", "statusMessage"])
+      if (handler[field] != null && typeof handler[field] !== "string")
+        throw new Error(`${at} needs "${field}" to be a string`);
+    if (Object.hasOwn(handler, "commandWindows") && Object.hasOwn(handler, "command_windows"))
+      throw new Error(`${at} must use only one spelling of "commandWindows"`);
+    if (handler.async !== undefined && typeof handler.async !== "boolean")
+      throw new Error(`${at} needs "async" to be a boolean`);
+    const limit = handler.additionalContextLimit;
+    if (limit != null && (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 0))
+      throw new Error(`${at} needs "additionalContextLimit" to be a non-negative integer`);
+    if (
+      handler.input !== undefined &&
+      (!isRecord(handler.input) || !codexInputValue(handler.input))
+    )
+      throw new Error(`${at} needs "input" to be an object representable as TOML`);
+  }
   if (
     handler.args !== undefined &&
     (!Array.isArray(handler.args) || handler.args.some((arg) => typeof arg !== "string"))
@@ -446,7 +475,8 @@ export function codexHooksWith(current: unknown, desired: Record<string, HookEve
     });
     for (const [name, list] of wanted)
       for (const group of list.slice(seen.get(name) ?? 0)) {
-        let index = groups.findIndex(isPlaceholder);
+        const last = groups.findLastIndex((entry) => ownerOf(entry) === name);
+        let index = groups.findIndex((entry, slot) => slot > last && isPlaceholder(entry));
         if (index === -1) index = groups.push(group) - 1;
         else groups[index] = group;
         review.push({ name, event, index });

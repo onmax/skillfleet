@@ -106,7 +106,11 @@ interface Definitions {
   warnings: string[];
 }
 
-function collect(sources: readonly EntrySource[], keep: ReadonlySet<string>): Definitions {
+function collect(
+  sources: readonly EntrySource[],
+  keep: ReadonlySet<string>,
+  records: Readonly<Record<string, OwnedEntry>>,
+): Definitions {
   const defs: Definitions = {
     servers: dict(),
     owner: new Map(),
@@ -131,10 +135,23 @@ function collect(sources: readonly EntrySource[], keep: ReadonlySet<string>): De
     if (server) defs.servers[name] = server;
     else defs.broken.add(name);
   };
+  const recorded = new Map<string, Set<string>>();
+  for (const [id, record] of Object.entries(records)) {
+    if (!id.startsWith("mcp/") || record.source === undefined) continue;
+    const names = recorded.get(record.source) ?? new Set<string>();
+    names.add(id.split("/")[2]!);
+    recorded.set(record.source, names);
+  }
+  const reserve = (source: string) => {
+    for (const name of recorded.get(source) ?? []) claim(name, source);
+  };
+  const present = new Set(sources.map((source) => source.id));
+  for (const source of keep) if (!present.has(source)) reserve(source);
   for (const source of sources) {
     if (source.error || keep.has(source.id)) {
       defs.frozenMcp.add(source.id);
       for (const agent of HOOK_DEF_AGENTS) defs.frozenHooks[agent].add(source.id);
+      reserve(source.id);
       continue;
     }
     for (const entry of source.files) {
@@ -173,6 +190,7 @@ function collect(sources: readonly EntrySource[], keep: ReadonlySet<string>): De
           }
         }
     }
+    if (defs.frozenMcp.has(source.id)) reserve(source.id);
   }
   return defs;
 }
@@ -285,7 +303,7 @@ export function syncEntries(
     errors: [],
   };
   const ledger = new Ledger(state.entries ?? dict(), report);
-  const defs = collect(sources, keep);
+  const defs = collect(sources, keep, ledger.records);
   report.shadowed.push(...defs.shadowed);
   report.warnings.push(...defs.warnings);
   const chosen = new Set(agents);
@@ -328,7 +346,9 @@ export function syncEntries(
 function desiredServers(agent: McpAgent, chosen: boolean, defs: Definitions, warnings: string[]) {
   if (!chosen) return dict<McpEntry>();
   const { entries, skipped } = mcpEntries(agent, defs.servers);
-  warnings.push(...skipped.map((problem) => problem.message));
+  warnings.push(
+    ...skipped.map((problem) => `${defs.owner.get(problem.server)}: ${problem.message}`),
+  );
   return entries;
 }
 
@@ -355,6 +375,38 @@ function syncMcp(
     const source = ledger.records[prefix + name]?.source;
     return !(source !== undefined && defs.frozenMcp.has(source) && !defs.owner.has(name));
   });
+  const previous = new Map<string, string[]>();
+  for (const name of names) {
+    const oldFile = ledger.records[prefix + name]?.file;
+    if (oldFile !== undefined && oldFile !== file)
+      previous.set(oldFile, [...(previous.get(oldFile) ?? []), name]);
+  }
+  for (const [oldFile, oldNames] of previous)
+    reconcileMcpFile(cell, oldFile, prefix, oldNames, {}, defs, ledger, dryRun);
+  reconcileMcpFile(
+    cell,
+    file,
+    prefix,
+    names.filter(
+      (name) => !ledger.next[prefix + name] || ledger.next[prefix + name]?.file === file,
+    ),
+    desired,
+    defs,
+    ledger,
+    dryRun,
+  );
+}
+
+function reconcileMcpFile(
+  cell: McpCell,
+  file: string,
+  prefix: string,
+  names: string[],
+  desired: Record<string, McpEntry>,
+  defs: Definitions,
+  ledger: Ledger,
+  dryRun: boolean,
+) {
   if (names.length === 0) return;
   const decide = (name: string, current: unknown) =>
     decideEntry({
@@ -487,6 +539,8 @@ function claudePlugin(chosen: boolean, defs: Definitions, ledger: Ledger, dryRun
     return;
   const definitions = hookDefinitions("claude-code", chosen, defs);
   const files = claudePluginFiles(definitions);
+  const manifestRel = ".claude-plugin/plugin.json";
+  const hooksRel = "hooks/hooks.json";
   const sources = Object.keys(definitions).sort();
   const rels = [
     ...new Set([...Object.keys(files), ...recorded.map((id) => id.slice(prefix.length))]),
@@ -501,14 +555,15 @@ function claudePlugin(chosen: boolean, defs: Definitions, ledger: Ledger, dryRun
   }
   const planned = rels.map((rel) => {
     const path = join(dir, ...rel.split("/"));
+    const current = readText(path);
     const decision = decideEntry({
       file: path,
       key: rel,
-      current: readText(path),
+      current,
       record: ledger.record(prefix + rel, path),
       desired: Object.hasOwn(files, rel) ? files[rel] : undefined,
     });
-    return { rel, path, decision };
+    return { rel, path, current, decision };
   });
   // A folder of that name that fleetrc did not make is someone else's plugin or skill.
   if (planned.some(({ decision }) => decision.action === "foreign")) {
@@ -519,11 +574,24 @@ function claudePlugin(chosen: boolean, defs: Definitions, ledger: Ledger, dryRun
     );
     return;
   }
-  for (const { rel, path, decision } of planned) {
+  if (
+    stat &&
+    !planned.some(({ rel, path }) => ledger.record(prefix + rel, path)) &&
+    !planned.some(({ rel, decision }) => rel === manifestRel && decision.action === "adopt")
+  ) {
+    ledger.report.warnings.push(
+      `${tildify(dir)} is not a plugin fleetrc made, so Claude Code's hooks were not synced; move it away`,
+    );
+    return;
+  }
+  if (Object.keys(files).length === 0) planned.reverse();
+  for (const { rel, path, current, decision } of planned) {
+    if (rel === manifestRel && decision.action === "prune" && ledger.next[prefix + hooksRel])
+      continue;
     if (!dryRun)
       try {
         if (writes(decision)) {
-          if (!replaceIfUnchanged(path, readText(path), decision.value as string, 0o644)) {
+          if (!replaceIfUnchanged(path, current, decision.value as string, 0o644)) {
             ledger.skip(
               path,
               `${tildify(path)} changed while fleetrc was writing it; fleetrc will try again on the next sync`,
@@ -789,9 +857,9 @@ export async function diffEntry(spec: string, id: string): Promise<string> {
   if (!cell) throw new UserError(`fleetrc writes no MCP servers for ${agent}`);
   const loaded = await loadManifest(spec, { offline: true });
   const state = loadState();
-  const defs = collect(offlineSources(loaded.sources, state), new Set());
+  const defs = collect(offlineSources(loaded.sources, state), new Set(), state.entries ?? {});
   const desired = mcpEntries(agent, defs.servers).entries[name];
-  const file = cell.file();
+  const file = state.entries?.[id]?.file ?? cell.file();
   let current: unknown;
   if (cell.format === "toml") {
     const text = readText(file);

@@ -42,11 +42,13 @@ import {
 import {
   dropEmptyKind,
   type FileEntry,
+  type FileTarget,
   findFileItems,
   itemId,
   itemName,
   itemPath,
   pathsLister,
+  targetPath,
   treeLister,
 } from "./files.ts";
 import { collisions, fetchClone, gitUrl, isCommitRef, type Refusal, refusals } from "./gitcache.ts";
@@ -64,7 +66,7 @@ import { assertSegment, GIT_FOLDER, nameKey, segmentProblem } from "./names.ts";
 import { type FetchBudget, fetchNpm, guardedFetch, parseNpmSpec, withCappedFetch } from "./npm.ts";
 import { tildify } from "./paths.ts";
 import { tarFileSizes, zipEntries } from "./tar.ts";
-import type { PendingUpdate, SourceState } from "./state.ts";
+import type { PendingUpdate, SourceState, State } from "./state.ts";
 
 export interface SkillEntry {
   name: string;
@@ -124,6 +126,7 @@ export interface SourceContext {
   cacheDir: string;
   storeDir: string;
   now: string;
+  fileLinks?: State["links"];
 }
 
 const SKILLS_OPTIONS = { telemetry: false } as const;
@@ -2176,6 +2179,7 @@ function applyVendored(
     earlier,
     commit,
     heldBack = new Set(),
+    reviewRemovals,
   }: {
     /** Skills whose install record was rebuilt from the store this run. */
     rebuilt: readonly string[];
@@ -2188,6 +2192,7 @@ function applyVendored(
     commit?: string;
     /** Skills upstream still has but whose download was refused: their copy stays as it is. */
     heldBack?: ReadonlySet<string>;
+    reviewRemovals?: ReadonlySet<string>;
   },
 ) {
   const write = !ctx.dryRun;
@@ -2208,8 +2213,10 @@ function applyVendored(
   ) => {
     const paths = storePaths(ctx.storeDir, name);
     const incoming = from ? hashDir(from) : {};
-    const upstreamChanged =
-      !existsSync(paths.upstream) || !sameTree(hashDir(paths.upstream), incoming);
+    const hasUpstream = existsSync(paths.upstream);
+    const upstreamChanged = from
+      ? !hasUpstream || !sameTree(hashDir(paths.upstream), incoming)
+      : hasUpstream;
     if (write && upstreamChanged) {
       if (from) replaceDir(from, paths.upstream);
       else rmSync(paths.upstream, { recursive: true, force: true });
@@ -2336,13 +2343,6 @@ function applyVendored(
   // A skill held back keeps the update it was already waiting on.
   for (const entry of out.pending)
     if (heldBack.has(entry.skill) && !pending.has(entry.skill)) pending.set(entry.skill, entry);
-  out.pending = [...pending.values()].sort((a, b) => (a.skill < b.skill ? -1 : 1));
-  if (write)
-    for (const name of Object.keys(state.pending))
-      if (!pending.has(name)) {
-        delete state.pending[name];
-        rmSync(storePaths(ctx.storeDir, name).upstream, { recursive: true, force: true });
-      }
   const kept = new Set(chosen.filter((skill) => staged.has(skill.name)).map((skill) => skill.name));
   for (const name of Object.keys(state.skills)) {
     if (kept.has(name)) continue;
@@ -2351,7 +2351,7 @@ function applyVendored(
       out.skills.push({ name, dir: paths.live, path: state.skills[name]?.path });
       continue;
     }
-    if (edited.has(name) || review) {
+    if (edited.has(name) || (review && (reviewRemovals?.has(name) ?? true))) {
       if (edited.has(name))
         out.warnings.push(
           `${source.id}: ${name} is gone upstream but has local edits, so it stays`,
@@ -2378,6 +2378,13 @@ function applyVendored(
     }
     out.removed.push(name);
   }
+  out.pending = [...pending.values()].sort((a, b) => (a.skill < b.skill ? -1 : 1));
+  if (write)
+    for (const name of Object.keys(state.pending))
+      if (!pending.has(name)) {
+        delete state.pending[name];
+        rmSync(storePaths(ctx.storeDir, name).upstream, { recursive: true, force: true });
+      }
   if (firstRun && out.added.length > 0) out.status = "installed";
   else if (out.updated.length > 0 || out.added.length > 0 || out.removed.length > 0)
     out.status = "updated";
@@ -2489,6 +2496,27 @@ function mergeItems(out: SourceResult, sub: SourceResult, kind: ItemKind, names:
     out.status = "review";
 }
 
+function approvedFileTargets(
+  source: VendoredSource,
+  kind: ItemKind,
+  ctx: SourceContext,
+): Map<string, FileTarget[]> | undefined {
+  if (!isFileKind(kind)) return undefined;
+  const approved = new Map<string, FileTarget[]>();
+  for (const [destination, link] of Object.entries(ctx.fileLinks ?? {})) {
+    if (link.source !== source.id || link.kind !== kind) continue;
+    if (!link.item.startsWith(`${kind}/`)) continue;
+    const path = link.item.slice(kind.length + 1);
+    const targets = findFileItems(source, kind, pathsLister([path]), []).get(path) ?? [];
+    for (const target of targets) {
+      if (target.agent !== link.agent) continue;
+      if (targetPath(kind, target) === destination)
+        approved.set(path, [...(approved.get(path) ?? []), target]);
+    }
+  }
+  return approved;
+}
+
 /**
  * Keeps a vendored source's files in its store, each kind in `<store>/<kind>`, as its skills are
  * kept: an edited copy holds the update, review mode waits for `fleetrc update`, and an item the
@@ -2504,6 +2532,8 @@ function vendoredFiles(
   version?: string,
 ) {
   if (source.kind === "index") return;
+  const firstRun = !state.fetchedAt;
+  const reviewing = source.update === "review" && !ctx.apply;
   for (const kind of fileKindsOf(source, state)) {
     const view = itemsView(state, kind);
     const kindCtx = { ...ctx, storeDir: join(ctx.storeDir, kind) };
@@ -2515,15 +2545,23 @@ function vendoredFiles(
       }
     if (!ctx.dryRun) recoverStore(kindCtx.storeDir);
     const rebuilt = rebuildRecords(view, kindCtx.storeDir);
-    const firstRun = Object.keys(view.skills).length === 0;
     lookForEdits(source, view, kindCtx, sub);
+    const selected = () =>
+      findFileItems(source, kind, pathsLister(Object.keys(view.skills).map(itemPath)), []);
+    let approved = source.update === "review" ? approvedFileTargets(source, kind, ctx) : undefined;
+    if (reviewing && !isFileKind(kind)) approved = selected();
     const found = root
       ? findFileItems(source, kind, treeLister(root), sub.warnings)
-      : findFileItems(source, kind, pathsLister(Object.keys(view.skills).map(itemPath)), []);
+      : (approved ?? selected());
     /** Definition texts a dry run takes from the staged copy, which it never moves to the store. */
     const stagedTexts = new Map<string, string | undefined>();
+    const removals = new Map<string, FileTarget[]>();
     if (!root) sub.skills = keptSkills(view, kindCtx.storeDir);
     else {
+      if (reviewing && approved)
+        for (const [path, targets] of approved)
+          if (!lstatSync(join(root, ...path.split("/")), { throwIfNoEntry: false }))
+            removals.set(path, targets);
       const staging = ctx.dryRun
         ? mkdtempSync(join(tmpdir(), "fleetrc-stage-"))
         : join(kindCtx.storeDir, `.stage-${process.pid}`);
@@ -2555,6 +2593,7 @@ function vendoredFiles(
           firstRun,
           earlier: new Map(),
           heldBack,
+          reviewRemovals: new Set([...removals.keys()].map(itemName)),
           commit: source.kind === "git" ? version : undefined,
         });
         if (ctx.dryRun && !isFileKind(kind))
@@ -2581,7 +2620,7 @@ function vendoredFiles(
         kind,
         path,
         file,
-        agents: found.get(path) ?? [],
+        agents: found.get(path) ?? removals.get(path) ?? [],
         ...(fresh.has(item.name) ? { updated: true } : {}),
         ...(text === undefined ? {} : { text }),
       });

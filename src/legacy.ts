@@ -43,10 +43,18 @@ export function legacyConfigDir(): string {
 export const LEGACY_LAUNCHERS = [LEGACY_NAME, `${LEGACY_NAME}.cmd`, `${LEGACY_NAME}.ps1`];
 
 /**
- * Whether this machine still has the old install's state to move: the old state folder, and no new
- * one to move it into, or a new one that never synced (a command made it before any migration).
+ * The file in the new state folder that says a move is under way: written before anything moves,
+ * removed once everything has, so a move that stops partway is finished by the next run.
+ */
+export const MIGRATION_MARKER = "migrating";
+
+/**
+ * Whether this machine still has the old install's state to move: a move that stopped partway, the
+ * old state folder and no new one to move it into, or a new one that never synced (a command made
+ * it before any migration).
  */
 export function migrationNeeded(newState: string): boolean {
+  if (existsSync(join(newState, MIGRATION_MARKER))) return true;
   const old = legacyStateDir();
   if (!existsSync(old)) return false;
   if (!existsSync(newState)) return true;

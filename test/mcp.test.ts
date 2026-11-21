@@ -115,9 +115,25 @@ describe("parseMcpFile", () => {
       typo: `has "enviroment", which fleetrc can't translate`,
       "9lives": "must start with a letter or _ and hold only letters, digits, _ and -",
       badType: '"type" must be "stdio", "http" or "sse", not "ws"',
-      badRef: '"${HOME:-/root}" has `${HOME:-/root}`; write a variable as ${NAME}, with no default',
+      badRef:
+        "args[0] has an invalid variable reference; write a variable as ${NAME}, with no default",
       badAgent: `"agents" names "windsurf", which fleetrc writes no MCP servers for; use claude-code, codex, cursor, gemini-cli, github-copilot, grok, opencode`,
     });
+  });
+
+  it("never echoes MCP credential values in parse and translation diagnostics", () => {
+    const secret = "dummy-credential";
+    const source = file({
+      invalid: { url: "https://example.test", headers: { Authorization: `\${TOKEN:-${secret}}` } },
+      partial: { url: "https://example.test", headers: { Authorization: `${secret} \${TOKEN}` } },
+      env: { command: "run", env: { API_TOKEN: `${secret}-\${TOKEN}` } },
+    });
+    const parsed = parseMcpFile(source, "defs: mcp.json");
+    expect(parsed.problems[0]?.message).toContain('server "invalid" header "Authorization"');
+    const skipped = mcpEntries("codex", parsed.servers).skipped;
+    expect(skipped.map(({ server }) => server)).toEqual(["partial", "env"]);
+    expect(JSON.stringify([...parsed.problems, ...skipped])).not.toContain(secret);
+    expect(() => parseMcpFile(`{${secret}}`)).toThrow(/^the MCP file is not valid JSON$/);
   });
 });
 

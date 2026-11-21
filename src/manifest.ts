@@ -1026,6 +1026,17 @@ function otherDefault(dir: string, path: string): string {
   return file;
 }
 
+/**
+ * The path in its repository of the manifest at `path` that `locate` found at `file`: `path`, or
+ * the other of the old name's default and the new one when `otherDefault` took that.
+ */
+export function checkedOutPath(path: string, file: string): string {
+  const legacyPath = `${LEGACY_MANIFEST_DIR}/manifest.json`;
+  for (const candidate of [path, DEFAULT_MANIFEST, legacyPath])
+    if (normalize(file).endsWith(sep + normalize(candidate))) return candidate;
+  return path;
+}
+
 /** Throws unless `file`, links followed, is inside `root`. */
 function within(root: string, file: string, spec: string) {
   if (!existsSync(file)) return;

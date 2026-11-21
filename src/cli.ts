@@ -577,7 +577,20 @@ async function timer(action: string | undefined) {
 
 function lastRun(): Report | undefined {
   const raw = readJsonOrNothing(paths.lastRun());
-  return isRecord(raw) && raw.version === 1 ? (raw as unknown as Report) : undefined;
+  if (!isRecord(raw) || raw.version !== 1) return undefined;
+  const report = raw as unknown as Report;
+  return {
+    ...report,
+    files: report.files ?? {
+      total: 0,
+      links: [],
+      added: [],
+      updated: [],
+      removed: [],
+      adopted: [],
+      foreign: [],
+    },
+  };
 }
 
 /** The installed timer's schedule, when the manifest now names another; see `scheduleDrift`. */
@@ -1386,8 +1399,12 @@ async function merge() {
   return result.conflicts.length && !dryRun ? 1 : 0;
 }
 
-/** The commands that move the old name's install to fleetrc's names first (migrate.ts). */
-const MIGRATING = new Set(["sync", "update", "init", "self-install"]);
+/**
+ * The commands that move the old name's install to fleetrc's names first (migrate.ts): those that
+ * change things, and every fleet action but status, so `fleet upgrade` can start the rollout from a
+ * machine that has only the old install.
+ */
+const MIGRATING = new Set(["sync", "update", "init", "self-install", "fleet"]);
 
 async function main(): Promise<number> {
   if (values.version) {
@@ -1422,7 +1439,11 @@ async function main(): Promise<number> {
             : `${command} has no --dry-run`,
       );
   // The first command of this release that changes things moves the old name's install, once.
-  if (MIGRATING.has(command) && migrationNeeded(stateDir())) {
+  if (
+    MIGRATING.has(command) &&
+    !(command === "fleet" && rest[0] === "status") &&
+    migrationNeeded(stateDir())
+  ) {
     const { migrate } = await import("./migrate.ts");
     say(...(await migrate({ dryRun })).lines);
   }

@@ -2,7 +2,7 @@
 // Claude Code's as the plugin ~/.claude/skills/fleetrc, Codex's as marked groups in hooks.json
 // whose slots never move, Grok's as owned files. Added, updated, removed when dropped, held when
 // edited by hand, left alone when foreign, and never written in a dry run.
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import {
@@ -10,6 +10,7 @@ import {
   machine,
   type Machine,
   read,
+  remote,
   skills,
   snapshot,
   writeFiles,
@@ -131,6 +132,16 @@ describe.each(AGENTS)("hooks for $agent", (agent) => {
     const dropped = await sync(m);
     expect(dropped.entries.held.map((held) => held.id)).toEqual(agent.changes);
     expect(read(file)).toBe(edited);
+    if (agent.agent === "claude-code") {
+      const plugin = m.at(".claude/skills/fleetrc");
+      expect(JSON.parse(read(join(plugin, ".claude-plugin/plugin.json")))).toHaveProperty(
+        "name",
+        "fleetrc",
+      );
+      rmSync(file);
+      await sync(m);
+      expect(existsSync(plugin)).toBe(false);
+    }
   });
 
   it("dry run writes nothing: no file, no plugin folder, no lock", async () => {
@@ -184,6 +195,16 @@ describe("hooks", () => {
     expect((await m.run("list")).stdout).toContain("agentHooks/claude-code/hooks/hooks.json  defs");
   });
 
+  it("leaves an existing user skill directory untouched", async () => {
+    const skill = ".claude/skills/fleetrc/SKILL.md";
+    const { m, init } = await setup("claude-code", {
+      before: (machine) => writeFiles(machine.home, { [skill]: "My skill\n" }),
+    });
+    expect(init.entries.added).toEqual([]);
+    expect(readdirSync(m.at(".claude/skills/fleetrc"))).toEqual(["SKILL.md"]);
+    expect(read(m.at(skill))).toBe("My skill\n");
+  });
+
   it("refuses a source skill named fleetrc: that name is the plugin's", async () => {
     const m = machine();
     const defs = join(m.root, "defs");
@@ -234,6 +255,75 @@ describe("hooks", () => {
     expect(again.entries.review).toEqual(["agentHooks/codex/defs/PreToolUse/0"]);
     expect(groups().PreToolUse).toEqual([mine, ours("echo one"), later]);
     expect((await m.run("status")).stdout).toContain("approve in /hooks");
+  });
+
+  it("Codex: invalid native fields leave the user's and synced groups intact", async () => {
+    const { m, defs } = await setup("codex", {
+      before: (machine) => writeFiles(machine.home, { ".codex/hooks.json": hookFile("echo mine") }),
+    });
+    const file = m.at(".codex/hooks.json");
+    const original = read(file);
+    for (const fields of [{ timeout: 1.5 }, { async: "false" }, { commandWindows: [] }]) {
+      const command = { type: "command", command: "echo bad", ...fields };
+      writeFileSync(
+        join(defs, "hooks.json"),
+        JSON.stringify({ hooks: { PreToolUse: [{ hooks: [command] }] } }),
+      );
+      expect((await sync(m)).warnings.join("\n")).toContain("stay as last synced");
+      expect(read(file)).toBe(original);
+    }
+  });
+
+  it("Codex: adding after a source's existing slot preserves its ledger ordinals", async () => {
+    const m = machine();
+    const group = (command: string) => ({ hooks: [{ type: "command", command }] });
+    const hooks = (...commands: string[]) =>
+      JSON.stringify({ hooks: { PreToolUse: commands.map(group) } });
+    const sources = ["first", "second"].map((id) => {
+      const local = join(m.root, id);
+      writeFiles(local, { ...skills("skills/", id), "hooks.json": hooks(id) });
+      return { id, local, skills: "skills/*", agentHooks: { codex: "hooks.json" } };
+    });
+    const write = (chosen: typeof sources) => m.manifest({ agents: ["codex"], sources: chosen });
+    expect((await m.run("init", write(sources), "--no-hooks")).code).toBe(0);
+    write(sources.slice(1));
+    await sync(m);
+    writeFileSync(join(sources[1]!.local, "hooks.json"), hooks("second", "extra"));
+    expect((await sync(m)).entries.added).toEqual(["agentHooks/codex/second/PreToolUse/1"]);
+    const file = m.at(".codex/hooks.json");
+    expect(JSON.parse(read(file)).hooks.PreToolUse).toEqual([
+      { fleetrc: "", hooks: [] },
+      { fleetrc: "second", ...group("second") },
+      { fleetrc: "second", ...group("extra") },
+    ]);
+    expect((await sync(m)).entries.held).toEqual([]);
+    write([{ ...sources[1]!, agentHooks: { codex: "missing.json" } }]);
+    const dropped = await sync(m);
+    expect(dropped.entries.removed).toHaveLength(2);
+    expect(dropped.entries.held).toEqual([]);
+    expect(JSON.parse(read(file)).hooks).toEqual({});
+  });
+
+  it("Codex: holds a deleted vendored hook file until update", async () => {
+    const m = machine();
+    const vendor = remote(m, "vendor", {
+      ...skills("skills/", "tool"),
+      "hooks.json": hookFile("echo one"),
+    });
+    const manifest = m.manifest({
+      agents: ["codex"],
+      sources: [
+        { id: "vendor", git: vendor.url, agentHooks: { codex: "hooks.json" }, update: "review" },
+      ],
+    });
+    expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
+    const file = m.at(".codex/hooks.json");
+    const installed = read(file);
+    vendor.commit({ "hooks.json": null });
+    expect((await sync(m)).entries.removed).toEqual([]);
+    expect(read(file)).toBe(installed);
+    expect((await m.run("update", "vendor")).code).toBe(0);
+    expect(JSON.parse(read(file)).hooks).toEqual({});
   });
 
   it("Codex: a definition losing a group leaves no gap before the user's", async () => {

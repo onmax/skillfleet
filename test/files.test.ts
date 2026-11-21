@@ -213,6 +213,173 @@ describe.each(KINDS)("$key", (kind) => {
 });
 
 describe("files across sources", () => {
+  it("keeps ambiguous instructions unlinked in review mode, including offline", async () => {
+    const m = machine();
+    const vendor = remote(m, "vendor", { "docs/team.md": "team\n", "docs/codex.md": "codex\n" });
+    const manifest = m.manifest({
+      agents: ["claude-code", "codex"],
+      sources: [
+        {
+          id: "vendor",
+          git: vendor.url,
+          update: "review",
+          instructions: { "claude-code": "docs/*.md", codex: "docs/codex.md" },
+        },
+      ],
+    });
+    const { sync } = await m.json<{ sync: Report }>("init", manifest, "--no-hooks");
+    expect(sync.warnings.join("\n")).toContain("match 2 files");
+    expect(sync.files.links.map((link) => link.agent)).toEqual(["codex"]);
+    expect(read(m.at(".codex/AGENTS.md"))).toBe("codex\n");
+    await m.json<Report>("sync", "--offline");
+    expect(existsSync(m.at(".claude/CLAUDE.md"))).toBe(false);
+  });
+
+  it("does not report a pending deletion when an instructions glob becomes ambiguous", async () => {
+    const m = machine();
+    const vendor = remote(m, "vendor", { "docs/team.md": "team\n" });
+    const manifest = m.manifest({
+      agents: ["claude-code"],
+      sources: [{ id: "vendor", git: vendor.url, update: "review", instructions: "docs/*.md" }],
+    });
+    await m.json("init", manifest, "--no-hooks");
+    expect(read(m.at(".claude/CLAUDE.md"))).toBe("team\n");
+    vendor.commit({ "docs/other.md": "other\n" });
+    const sync = await m.json<Report>("sync");
+    expect(sync.warnings.join("\n")).toContain("match 2 files");
+    expect(sync.pending).toEqual([]);
+    expect(existsSync(m.at(".claude/CLAUDE.md"))).toBe(false);
+  });
+
+  it("finds retained edits by ID and rejects ambiguous retained copies", async () => {
+    const m = machine();
+    const first = remote(m, "first", { ...skills("skills/", "first"), "AGENTS.md": "first\n" });
+    const second = remote(m, "second", { ...skills("skills/", "second"), "AGENTS.md": "second\n" });
+    const write = (instructions: boolean) =>
+      m.manifest({
+        agents: ["claude-code", "codex"],
+        sources: [
+          {
+            id: "first",
+            git: first.url,
+            ...(instructions && { instructions: { codex: "AGENTS.md" } }),
+          },
+          {
+            id: "second",
+            git: second.url,
+            ...(instructions && { instructions: { "claude-code": "AGENTS.md" } }),
+          },
+        ],
+      });
+    await m.json("init", write(true), "--no-hooks");
+    writeFileSync(m.at(".claude/CLAUDE.md"), "second edited\n");
+    write(false);
+    const sync = await m.json<Report>("sync");
+    expect(sync.files.total).toBe(0);
+    expect(sync.pending).toEqual([]);
+    const diff = await m.run("diff", "instructions/AGENTS.md");
+    expect(diff.code, diff.stderr).toBe(0);
+    expect(diff.stdout).toContain("+second edited");
+
+    write(true);
+    await m.json<Report>("sync");
+    writeFileSync(m.at(".codex/AGENTS.md"), "first edited\n");
+    write(false);
+    await m.json<Report>("sync");
+    const ambiguous = await m.run("diff", "instructions/AGENTS.md");
+    expect(ambiguous.code).not.toBe(0);
+    expect(ambiguous.stderr).toContain("ambiguous: it comes from first, second");
+  });
+
+  it("holds the first file of a new kind after the source's first fetch", async () => {
+    const m = machine();
+    const vendor = remote(m, "vendor", { "AGENTS.md": "approved instruction\n" });
+    const command = KINDS[2]!;
+    const manifest = m.manifest({
+      agents: ["claude-code"],
+      sources: [
+        {
+          id: "vendor",
+          git: vendor.url,
+          update: "review",
+          instructions: "AGENTS.md",
+          commands: command.glob,
+        },
+      ],
+    });
+    const init = await m.json<{ sync: Report }>("init", manifest, "--no-hooks");
+    expect(init.sync.files.total).toBe(1);
+    vendor.commit({ [command.file]: "new command\n" });
+
+    const sync = await m.json<Report>("sync");
+    expect(sync.pending).toContainEqual({
+      source: "vendor",
+      skill: command.item,
+      reason: "review",
+      files: ["commit.md"],
+    });
+    expect(existsSync(m.at(command.at))).toBe(false);
+    expect((await m.run("diff", command.item)).stdout).toContain("+new command");
+    expect((await m.run("update", "vendor")).code).toBe(0);
+    expect(read(m.at(command.at))).toBe("new command\n");
+  });
+
+  it("keeps pending deletions linked until approval but unlinks files dropped by the manifest", async () => {
+    const m = machine();
+    const vendor = remote(m, "vendor", { "commands/a.md": "first\n", "commands/b.md": "second\n" });
+    const write = (commands: string) =>
+      m.manifest({
+        agents: ["claude-code"],
+        sources: [{ id: "vendor", git: vendor.url, update: "review", commands }],
+      });
+    const init = await m.json<{ sync: Report }>(
+      "init",
+      write("commands/*.md"),
+      "--no-hooks",
+      "--copy",
+    );
+    expect(init.sync.files.total).toBe(2);
+    vendor.commit({ "commands/a.md": null, "commands/b.md": null });
+    for (const args of [[], ["--offline"], []]) {
+      const sync = await m.json<Report>("sync", ...args);
+      expect(sync.pending.map((entry) => entry.skill)).toEqual([
+        "commands/commands/a.md",
+        "commands/commands/b.md",
+      ]);
+      expect(read(m.at(".claude/commands/a.md"))).toBe("first\n");
+      expect(read(m.at(".claude/commands/b.md"))).toBe("second\n");
+    }
+    expect((await m.run("diff", "commands/commands/a.md")).stdout).toContain("-first");
+    write("commands/a.md");
+    const sync = await m.json<Report>("sync");
+    expect(sync.pending.map((entry) => entry.skill)).toEqual(["commands/commands/a.md"]);
+    expect(existsSync(m.at(".claude/commands/b.md"))).toBe(false);
+    expect((await m.run("update", "vendor")).code).toBe(0);
+    expect(existsSync(m.at(".claude/commands/a.md"))).toBe(false);
+  });
+
+  it("formats a version-1 status report from before file support", async () => {
+    const { m, init } = await vendored(KINDS[0]!);
+    const { files: _files, ...legacy } = init;
+    writeFileSync(join(m.stateDir, "last-run.json"), JSON.stringify(legacy));
+    const status = await m.run("status");
+    expect(status.code, status.stderr).toBe(0);
+    expect(status.stdout).toContain("linked 1 skills");
+  });
+
+  it("plans a new vendored copy without creating it", async () => {
+    const { m, vendor, write } = await vendored(KINDS[0]!);
+    const command = KINDS[2]!;
+    write({ instructions: "AGENTS.md", commands: command.glob });
+    vendor.commit({ [command.file]: "new command\n" });
+    const plan = await m.json<Report>("sync", "--dry-run", "--copy");
+    expect(plan.errors).toEqual([]);
+    expect(plan.files.added).toEqual([m.at(command.at)]);
+    expect(existsSync(m.at(command.at))).toBe(false);
+    expect((await m.run("sync", "--copy")).code).toBe(0);
+    expect(read(m.at(command.at))).toBe("new command\n");
+  });
+
   it("second source is shadowed: the first source's file wins", async () => {
     const m = machine();
     const first = remote(m, "first", { "AGENTS.md": "first\n" });
@@ -349,9 +516,16 @@ describe("files across sources", () => {
     const vendor = remote(m, "vendor", {
       "AGENTS.md": lines("one", "two", "three", "four", "five"),
     });
+    const mine = join(m.root, "mine");
+    mkdirSync(mine);
+    writeFileSync(join(mine, "AGENTS.md"), "codex\n");
+    const sources = [
+      { id: "mine", local: mine, instructions: { codex: "AGENTS.md" } },
+      { id: "vendor", git: vendor.url, instructions: { "claude-code": "AGENTS.md" } },
+    ];
     const manifest = m.manifest({
       agents: ["claude-code"],
-      sources: [{ id: "vendor", git: vendor.url, instructions: "AGENTS.md" }],
+      sources,
     });
     expect((await m.run("init", manifest, "--no-hooks")).code).toBe(0);
     writeFileSync(m.at(".claude/CLAUDE.md"), lines("one", "TWO (mine)", "three", "four", "five"));
@@ -371,6 +545,16 @@ describe("files across sources", () => {
       lines("one", "TWO (mine)", "three", "four", "FIVE (theirs)"),
     );
     expect((await m.json<Report>("sync")).pending).toEqual([]);
+
+    m.manifest({ agents: ["claude-code", "codex"], sources });
+    expect((await m.run("sync")).code).toBe(0);
+    for (const action of ["diff", "merge"]) {
+      const ambiguous = await m.run(action, "instructions/AGENTS.md");
+      expect(ambiguous.code).not.toBe(0);
+      expect(ambiguous.stderr).toContain("ambiguous");
+      expect(ambiguous.stderr).toContain("mine");
+      expect(ambiguous.stderr).toContain("vendor");
+    }
   });
 
   it("--copy copies the file and takes an edit back into fleetrc's copy", async () => {

@@ -220,6 +220,7 @@ interface Desired {
   item: string;
   agent: string;
   file: string;
+  updated?: boolean;
 }
 
 /** Paths compare as the file system stores them: macOS and Windows fold case and Unicode form. */
@@ -306,6 +307,7 @@ export function linkFiles(
             item: itemId(entry.kind, entry.path),
             agent: target.agent,
             file: entry.file,
+            updated: entry.updated,
           });
       }
     }
@@ -333,7 +335,7 @@ export function linkFiles(
   let refusedLinks = false;
   /** Makes the link, or the copy, at `entry.path`; returns its record's kind and hash. */
   const make = (entry: Desired): { link: FileLink["link"]; hash?: string } => {
-    if (dryRun) return copy ? { link: "copy", hash: hashOf(entry.file) } : { link: "symlink" };
+    if (dryRun) return { link: copy ? "copy" : "symlink" };
     mkdirSync(dirname(entry.path), { recursive: true });
     if (!copy)
       try {
@@ -381,7 +383,12 @@ export function linkFiles(
       } else if (stat.isFile() && recorded?.link === "copy" && recorded.hash) {
         const now = hashOf(path);
         if (now === recorded.hash) {
-          if (copy && now === hashOf(entry.file) && samePath(recorded.target, entry.file)) {
+          if (
+            copy &&
+            samePath(recorded.target, entry.file) &&
+            !(dryRun && entry.updated) &&
+            now === hashOf(entry.file)
+          ) {
             record(entry, "copy", now);
             continue;
           }

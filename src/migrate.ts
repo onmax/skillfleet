@@ -7,13 +7,14 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   readlinkSync,
   renameSync,
   rmdirSync,
   rmSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { getSupportedAgents } from "skills";
 import { codexLegacyDir, sharedSkillsDir } from "./agents.ts";
 import { AGENT_NAMES, installedHooks, installHooks } from "./agenthooks.ts";
@@ -26,6 +27,7 @@ import {
   LEGACY_TIMER,
   legacyConfigDir,
   legacyStateDir,
+  MIGRATION_MARKER,
 } from "./legacy.ts";
 import { lockText, readLock, takeLock } from "./lock.ts";
 import { linkTarget, makeLink, MANIFEST_FILE, readRecordsFrom, removeLink } from "./linker.ts";
@@ -78,16 +80,28 @@ function rebaseFile(file: string, moves: readonly [string, string][], dryRun: bo
   return true;
 }
 
+/** Whether the files or links `a` and `b` hold the same: the same bytes, or the same target. */
+function same(a: string, b: string): boolean {
+  const x = lstatSync(a);
+  const y = lstatSync(b);
+  if (x.isSymbolicLink() || y.isSymbolicLink())
+    return x.isSymbolicLink() && y.isSymbolicLink() && readlinkSync(a) === readlinkSync(b);
+  return x.isFile() && y.isFile() && x.size === y.size && readFileSync(a).equals(readFileSync(b));
+}
+
 /**
  * Moves the folder `from` to `to`: a rename when `to` is missing, else each entry `to` lacks, into
- * folders both hold, `to`'s own entries kept. What is left of `from` goes.
+ * folders both hold. An entry `to` already holds the same goes from `from`; one that differs stays
+ * in both, and `from` stays to hold it. Returns those, relative to `from`.
  */
-function moveDir(from: string, to: string, skip: readonly string[] = []) {
+function moveDir(from: string, to: string, skip: readonly string[] = []): string[] {
+  if (!existsSync(from)) return [];
   if (!existsSync(to)) {
     mkdirSync(resolve(to, ".."), { recursive: true });
     renameSync(from, to);
-    return;
+    return [];
   }
+  const kept: string[] = [];
   const merge = (a: string, b: string) => {
     for (const name of readdirSync(a)) {
       if (skip.includes(name) && a === from) continue;
@@ -95,19 +109,59 @@ function moveDir(from: string, to: string, skip: readonly string[] = []) {
       const target = join(b, name);
       const there = lstat(target);
       if (!there) renameSync(source, target);
-      else if (there.isDirectory() && lstatSync(source).isDirectory()) merge(source, target);
+      else if (there.isDirectory() && lstatSync(source).isDirectory()) {
+        merge(source, target);
+        if (readdirSync(source).length === 0) rmdirSync(source);
+      } else if (same(source, target)) rmSync(source);
+      else kept.push(relative(from, source));
     }
   };
   merge(from, to);
-  rmSync(from, { recursive: true, force: true });
+  if (readdirSync(from).length === 0) rmdirSync(from);
+  return kept;
 }
 
-/** The agents' skills folders that hold the old record of links (agents.ts names them). */
-function recordDirs(): string[] {
+/** The variables that place agents' folders, less those that place fleetrc's own (paths.ts). */
+const AGENT_ENV = __SKILLS_AGENT_ENV__.filter((key) => key !== "APPDATA" && key !== "LOCALAPPDATA");
+
+/**
+ * Takes, for the move, the variables that placed the agents' folders when the old install was
+ * made, which `hook install` saved in `file`, where this process lacks them: `fleet upgrade` moves
+ * a host from a bare ssh shell. Returns the folders they name, and a function that puts the
+ * environment back.
+ */
+function adoptAgentEnv(file: string): { homes: string[]; restore: () => void } {
+  const saved = readJsonOrNothing(file);
+  const homes: string[] = [];
+  const set: string[] = [];
+  if (isRecord(saved))
+    for (const key of AGENT_ENV) {
+      const value = saved[key];
+      if (typeof value !== "string" || !value.trim()) continue;
+      homes.push(value.trim());
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+        set.push(key);
+      }
+    }
+  return {
+    homes,
+    restore: () => {
+      for (const key of set) delete process.env[key];
+    },
+  };
+}
+
+/**
+ * The agents' skills folders that hold the old record of links (agents.ts names them), and the
+ * `skills` folder in each of `homes`, the agents' folders the install saved.
+ */
+function recordDirs(homes: readonly string[]): string[] {
   const dirs = new Set([
     sharedSkillsDir(),
     resolve(codexLegacyDir()),
     join(claudeHome(), "skills"),
+    ...homes.map((home) => resolve(home, "skills")),
   ]);
   for (const agent of getSupportedAgents())
     if (agent.globalSkillsDir) dirs.add(resolve(agent.globalSkillsDir));
@@ -150,12 +204,14 @@ function moveRecord(dir: string, moves: readonly [string, string][], oldState: s
 }
 
 /**
- * Moves the old release's install on this machine to fleetrc's names. Under the old install's sync lock:
- * removes the old timer, moves the state and config folders, rewrites the paths into them (in the
- * state and the agents' link records, whose links follow), installs the new launcher in place of
- * the old one, replaces the session hooks where they stand, and installs the timer again under its
- * new name. A sync after it finds everything where it left it. With `dryRun` it writes nothing, says
- * what it would do, and has the rest of the run read the old install.
+ * Moves the old release's install on this machine to fleetrc's names. Under the sync locks of both
+ * installs: marks the move as under way, removes the old timer, moves the state and config
+ * folders, rewrites the paths into them (in the state and the agents' link records, whose links
+ * follow), installs the new launcher in place of the old one, replaces the session hooks where they
+ * stand, installs the timer again under its new name, and clears the mark. A move that stops
+ * partway leaves the mark, and the next run does the rest. A sync after it finds everything where
+ * it left it. With `dryRun` it writes nothing, says what it would do, and has the rest of the run
+ * read the old install.
  */
 export async function migrate(options: { dryRun?: boolean } = {}): Promise<Migration> {
   const oldState = legacyStateDir();
@@ -166,47 +222,59 @@ export async function migrate(options: { dryRun?: boolean } = {}): Promise<Migra
     [oldState, newState],
     [oldConfig, newConfig],
   ];
+  const marker = join(newState, MIGRATION_MARKER);
+  const resumed = readJsonOrNothing(marker);
   const oldConfigRaw = readJsonOrNothing(join(oldConfig, "config.json"));
+  const hadState = existsSync(oldState);
   const hadConfig = existsSync(oldConfig);
   const hadTimer =
+    (isRecord(resumed) && resumed.timer === true) ||
     existsSync(join(oldState, "timer.json")) ||
     (isRecord(oldConfigRaw) && oldConfigRaw.timer === true);
   const lines = [`${LEGACY_NAME} is now fleetrc; moving this machine's install:`];
   const say = (line: string) => lines.push(`  ${line}`);
+  const agentEnv = adoptAgentEnv(join(hadState ? oldState : newState, "hook-env.json"));
 
   if (options.dryRun) {
-    if (hadTimer) say(`would remove the ${LEGACY_TIMER} timer`);
-    say(`would move ${tildify(oldState)} to ${tildify(newState)}`);
-    if (existsSync(oldConfig)) say(`would move ${tildify(oldConfig)} to ${tildify(newConfig)}`);
-    for (const dir of recordDirs())
-      say(
-        `would rename ${tildify(join(dir, LEGACY_RECORD))} to ${MANIFEST_FILE} and relink its links`,
-      );
-    say(`would install the fleetrc launcher in place of the ${LEGACY_NAME} one`);
-    for (const { agent, file } of installedHooks())
-      say(
-        `would replace the ${AGENT_NAMES[agent]} session hook in ${tildify(file)} where it stands`,
-      );
-    if (hadTimer) say(`would install the ${TIMER_NAME} timer`);
-    // The rest of the dry run reads the old install, as a sync there would.
-    readPlacesFrom({ state: oldState, config: oldConfig });
-    readRecordsFrom(LEGACY_RECORD);
+    try {
+      if (hadTimer) say(`would remove the ${LEGACY_TIMER} timer`);
+      if (hadState) say(`would move ${tildify(oldState)} to ${tildify(newState)}`);
+      else say("would finish the move an earlier run started");
+      if (hadConfig) say(`would move ${tildify(oldConfig)} to ${tildify(newConfig)}`);
+      for (const dir of recordDirs(agentEnv.homes))
+        say(
+          `would rename ${tildify(join(dir, LEGACY_RECORD))} to ${MANIFEST_FILE} and relink its links`,
+        );
+      say(`would install the fleetrc launcher in place of the ${LEGACY_NAME} one`);
+      for (const { agent, file } of installedHooks())
+        say(
+          `would replace the ${AGENT_NAMES[agent]} session hook in ${tildify(file)} where it stands`,
+        );
+      if (hadTimer) say(`would install the ${TIMER_NAME} timer`);
+    } finally {
+      agentEnv.restore();
+    }
+    if (hadState) {
+      // The rest of the dry run reads the old install, as a sync there would.
+      readPlacesFrom({ state: oldState, config: oldConfig });
+      readRecordsFrom(LEGACY_RECORD);
+    }
     return { lines };
   }
 
   const mine = lockText("migrate");
-  const locks = [join(oldState, "sync.lock")];
-  takeLock(locks[0]!, mine);
-  if (existsSync(newState)) {
-    locks.push(paths.lock());
-    try {
-      takeLock(paths.lock(), mine);
-    } catch (error) {
-      rmSync(locks[0]!, { force: true });
-      throw error;
-    }
-  }
+  const locks: string[] = [];
+  const take = (file: string) => {
+    takeLock(file, mine);
+    locks.push(file);
+  };
   try {
+    if (hadState) take(join(oldState, "sync.lock"));
+    mkdirSync(newState, { recursive: true });
+    take(paths.lock());
+    // Written first and removed last: until then, `migrationNeeded` sends the next run here.
+    writeJson(marker, { timer: hadTimer });
+
     if (hadTimer) {
       // The old timer's removal deletes the log its unit names; the log stays, under its new name.
       const logs = join(oldState, "logs");
@@ -221,18 +289,26 @@ export async function migrate(options: { dryRun?: boolean } = {}): Promise<Migra
       }
     }
 
-    try {
-      moveDir(oldState, newState, ["sync.lock"]);
-      // The lock moved with the folder: it is the new folder's now.
-      locks[0] = paths.lock();
-      if (hadConfig) moveDir(oldConfig, newConfig);
-    } catch (error) {
-      throw new UserError(
-        `could not move ${tildify(oldState)} to ${tildify(newState)}: ${(error as Error).message}; move it by hand and run fleetrc again`,
-      );
+    const moved: [string, string, string[]][] = [];
+    for (const [from, to, skip] of [
+      [oldState, newState, ["sync.lock"]],
+      [oldConfig, newConfig, []],
+    ] as const) {
+      if (!existsSync(from)) continue;
+      try {
+        moved.push([from, to, moveDir(from, to, skip)]);
+      } catch (error) {
+        throw new UserError(
+          `could not move ${tildify(from)} to ${tildify(to)}: ${(error as Error).message}; move it by hand and run fleetrc again`,
+        );
+      }
+      say(`moved ${tildify(from)} to ${tildify(to)}`);
     }
-    say(`moved ${tildify(oldState)} to ${tildify(newState)}`);
-    if (hadConfig) say(`moved ${tildify(oldConfig)} to ${tildify(newConfig)}`);
+    for (const [from, to, files] of moved)
+      if (files.length > 0)
+        say(
+          `kept ${tildify(from)}: ${files.length === 1 ? "this file differs" : "these files differ"} from ${tildify(to)}'s, which ${files.length === 1 ? "was" : "were"} kept too: ${files.join(", ")}; compare them, then delete ${tildify(from)}`,
+        );
     for (const [dir, names] of [
       [newState, readdirSync(newState)],
       [newConfig, existsSync(newConfig) ? readdirSync(newConfig) : []],
@@ -240,7 +316,7 @@ export async function migrate(options: { dryRun?: boolean } = {}): Promise<Migra
       for (const name of names)
         if (name.endsWith(".json")) rebaseFile(join(dir, name), moves, false);
 
-    for (const dir of recordDirs()) {
+    for (const dir of recordDirs(agentEnv.homes)) {
       const relinked = moveRecord(dir, moves, oldState);
       say(
         `renamed ${tildify(join(dir, LEGACY_RECORD))} to ${MANIFEST_FILE}${relinked ? `, ${relinked} link${relinked === 1 ? "" : "s"} moved` : ""}`,
@@ -280,10 +356,11 @@ export async function migrate(options: { dryRun?: boolean } = {}): Promise<Migra
         );
       }
     }
+    rmSync(marker);
     return { lines };
   } finally {
-    for (const lock of new Set(locks))
-      if (readLock(lock)?.text === mine) rmSync(lock, { force: true });
+    agentEnv.restore();
+    for (const lock of locks) if (readLock(lock)?.text === mine) rmSync(lock, { force: true });
     try {
       // An old folder left empty by a lock that stayed behind.
       rmdirSync(oldState);

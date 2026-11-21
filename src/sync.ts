@@ -529,6 +529,7 @@ export async function sync(options: SyncOptions = {}): Promise<Report> {
         cacheDir: scratch ?? paths.cache(),
         storeDir: paths.store(source.id),
         now: startedAt,
+        fileLinks: state.links,
       };
       doing = `fetching ${source.id}`;
       try {
